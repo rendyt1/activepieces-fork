@@ -1,0 +1,18 @@
+encryptionsalt: v1:vRlDDKUTH7c=:v1:sJWM8JASlN4dIs5r:HtrL2UiMFXf0hrd/P64GTXADD/LDVw==
+config:
+  activepieces:environment: "prod"
+  activepieces:apEncryptionKey:  
+  activepieces:apJwtSecret: 
+  activepieces:deployLocalBuild: "false"
+  activepieces:repoName: "activepieces-prod-repo"
+  activepieces:containerCpu: "512"
+  activepieces:containerMemory: "1024"
+  activepieces:containerInstances: "1"
+  activepieces:usePostgres: "false"
+  activepieces:dbInstanceClass: "db.t3.small"
+  activepieces:dbIsPublic: "false"
+  activepieces:useRedis: "false"
+  activepieces:redisNodeType: "cache.t3.small"
+  activepieces:domain: "helpr.id"
+  aws:region: "ap-southeast-3"
+
