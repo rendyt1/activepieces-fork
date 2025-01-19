@@ -49,7 +49,7 @@ COPY . .
 COPY .npmrc package.json package-lock.json ./
 RUN npm ci
 
-RUN npx nx run-many --target=build --projects=server-api --configuration production
+RUN npx nx run-many --target=build --projects=server-api --configuration production --platform linux/amd64
 RUN npx nx run-many --target=build --projects=react-ui 
 
 # Install backend production dependencies
