@@ -5,6 +5,7 @@ import * as awsx from '@pulumi/awsx';
 import { ApplicationLoadBalancer } from '@pulumi/awsx/lb/applicationLoadBalancer';
 import { registerAutoTags } from './autotag';
 import * as child_process from 'child_process';
+import { Vocabulary } from '@pulumi/aws/connect';
 
 const stack = pulumi.getStack();
 const config = new pulumi.Config();
@@ -52,6 +53,7 @@ registerAutoTags({
 });
 
 let imageName;
+let efsPrivateMountTarget;
 
 // Check if we're deploying a local build or direct from Docker Hub
 if (config.getBoolean('deployLocalBuild')) {
@@ -111,7 +113,7 @@ const containerEnvironmentVars: awsx.types.input.ecs.TaskDefinitionKeyValuePairA
 
 // Allocate a new VPC with the default settings:
 const vpc = new awsx.ec2.Vpc(`${stack}-vpc`, {
-  numberOfAvailabilityZones: 2,
+  numberOfAvailabilityZones: 1,
   natGateways: {
     strategy: 'Single',
   },
@@ -278,6 +280,28 @@ if (usePostgres) {
   containerEnvironmentVars.push({
     name: 'AP_DB_TYPE',
     value: 'SQLITE3',
+  });
+
+  const efs = new aws.efs.FileSystem(`${stack}-efs`);
+
+  const efsSecurityGroup = new aws.ec2.SecurityGroup(`${stack}-efs-sg`, {
+    name: `${stack}-efs-sg`,
+    vpcId: vpc.vpcId,
+    ingress: [
+      {
+        protocol: 'tcp',
+        fromPort: 0,
+        toPort: 0,
+        description: 'allow NFS access for EFS from anywhere',
+        securityGroups: [fargateSecGroup.id],
+      },
+    ],
+  });
+
+  efsPrivateMountTarget = new aws.efs.MountTarget(`${stack}-mount-target`, {
+    fileSystemId: efs.id,
+    subnetId: vpc.privateSubnetIds[0],
+    securityGroups: [efsSecurityGroup.id],
   });
 }
 
@@ -508,6 +532,17 @@ const fargateService = new awsx.ecs.FargateService(`${stack}-fg`, {
       ],
       environment: environmentVariables,
     },
+    ...(!usePostgres && {
+      volumes: [
+        {
+          name: `${stack}-volume`,
+          efsVolumeConfiguration: {
+            fileSystemId: efsPrivateMountTarget.fileSystemId,
+            transitEncryption: 'ENABLED',
+          },
+        },
+      ],
+    }),
   },
 });
 
