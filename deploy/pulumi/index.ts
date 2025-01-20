@@ -113,7 +113,7 @@ const containerEnvironmentVars: awsx.types.input.ecs.TaskDefinitionKeyValuePairA
 
 // Allocate a new VPC with the default settings:
 const vpc = new awsx.ec2.Vpc(`${stack}-vpc`, {
-  numberOfAvailabilityZones: 1,
+  numberOfAvailabilityZones: 2,
   natGateways: {
     strategy: 'Single',
   },
@@ -290,9 +290,9 @@ if (usePostgres) {
     ingress: [
       {
         protocol: 'tcp',
-        fromPort: 0,
-        toPort: 0,
-        description: 'allow NFS access for EFS from anywhere',
+        fromPort: 2049,
+        toPort: 2049,
+        description: 'allow NFS access for EFS from ECS',
         securityGroups: [fargateSecGroup.id],
       },
     ],
