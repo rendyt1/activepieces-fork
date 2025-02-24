@@ -5,7 +5,6 @@ import * as awsx from '@pulumi/awsx';
 import { ApplicationLoadBalancer } from '@pulumi/awsx/lb/applicationLoadBalancer';
 import { registerAutoTags } from './autotag';
 import * as child_process from 'child_process';
-import { Vocabulary } from '@pulumi/aws/connect';
 
 const stack = pulumi.getStack();
 const config = new pulumi.Config();
@@ -26,7 +25,7 @@ const apJwtSecret = config.getSecret('apJwtSecret')?.apply((secretValue) => {
 });
 const containerCpu = config.requireNumber('containerCpu');
 const containerMemory = config.requireNumber('containerMemory');
-const containerInstances = config.requireNumber('containerInstances');
+const containerInstances = 0; //config.requireNumber('containerInstances');
 const addIpToPostgresSecurityGroup = config.get('addIpToPostgresSecurityGroup');
 const domain = config.get('domain');
 const subDomain = config.get('subDomain');
@@ -487,7 +486,7 @@ const environmentVariables = [
   },
   {
     name: 'AP_EXECUTION_MODE',
-    value: 'UNSANDBOXED',
+    value: 'SANDBOXED',
   },
   {
     name: 'AP_REDIS_USE_SSL',
@@ -504,6 +503,10 @@ const environmentVariables = [
   {
     name: 'AP_TEMPLATES_SOURCE_URL',
     value: 'https://cloud.activepieces.com/api/v1/flow-templates',
+  },
+  {
+    name: 'AP_SHOW_SIGN_UP_LINK',
+    value: 'false',
   },
 ];
 
