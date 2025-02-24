@@ -25,7 +25,7 @@ const apJwtSecret = config.getSecret('apJwtSecret')?.apply((secretValue) => {
 });
 const containerCpu = config.requireNumber('containerCpu');
 const containerMemory = config.requireNumber('containerMemory');
-const containerInstances = 0; //config.requireNumber('containerInstances');
+const containerInstances = config.requireNumber('containerInstances');
 const addIpToPostgresSecurityGroup = config.get('addIpToPostgresSecurityGroup');
 const domain = config.get('domain');
 const subDomain = config.get('subDomain');
@@ -114,8 +114,13 @@ const containerEnvironmentVars: awsx.types.input.ecs.TaskDefinitionKeyValuePairA
 const vpc = new awsx.ec2.Vpc(`${stack}-vpc`, {
   numberOfAvailabilityZones: 2,
   natGateways: {
-    strategy: 'Single',
+    strategy: 'None',
   },
+  subnetSpecs: [
+    {
+      type: 'Public',
+    },
+  ],
   tags: {
     // For some reason, this is how you name a VPC with AWS:
     // https://github.com/pulumi/pulumi-terraform/issues/38#issue-262186406
@@ -295,11 +300,19 @@ if (usePostgres) {
         securityGroups: [fargateSecGroup.id],
       },
     ],
+    egress: [
+      {
+        protocol: 'tcp',
+        fromPort: 2049,
+        toPort: 2049,
+        securityGroups: [fargateSecGroup.id],
+      },
+    ],
   });
 
   efsPrivateMountTarget = new aws.efs.MountTarget(`${stack}-mount-target`, {
     fileSystemId: efs.id,
-    subnetId: vpc.privateSubnetIds[0],
+    subnetId: vpc.publicSubnetIds[0],
     securityGroups: [efsSecurityGroup.id],
   });
 }
