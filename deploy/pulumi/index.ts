@@ -291,7 +291,7 @@ if (usePostgres) {
     value: 'SQLITE3',
   });
 
-  if (!ALL_OFF || PERSIST_EFS) {
+  if (PERSIST_EFS) {
     const efs = new aws.efs.FileSystem(`${stack}-efs`);
 
     const efsSecurityGroup = new aws.ec2.SecurityGroup(`${stack}-efs-sg`, {
