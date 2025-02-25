@@ -6,6 +6,9 @@ import { ApplicationLoadBalancer } from '@pulumi/awsx/lb/applicationLoadBalancer
 import { registerAutoTags } from './autotag';
 import * as child_process from 'child_process';
 
+const ALL_OFF = false;
+const PERSIST_EFS = false;
+
 const stack = pulumi.getStack();
 const config = new pulumi.Config();
 
@@ -25,7 +28,9 @@ const apJwtSecret = config.getSecret('apJwtSecret')?.apply((secretValue) => {
 });
 const containerCpu = config.requireNumber('containerCpu');
 const containerMemory = config.requireNumber('containerMemory');
-const containerInstances = config.requireNumber('containerInstances');
+const containerInstances = ALL_OFF
+  ? 0
+  : config.requireNumber('containerInstances');
 const addIpToPostgresSecurityGroup = config.get('addIpToPostgresSecurityGroup');
 const domain = config.get('domain');
 const subDomain = config.get('subDomain');
@@ -286,35 +291,37 @@ if (usePostgres) {
     value: 'SQLITE3',
   });
 
-  const efs = new aws.efs.FileSystem(`${stack}-efs`);
+  if (!ALL_OFF || PERSIST_EFS) {
+    const efs = new aws.efs.FileSystem(`${stack}-efs`);
 
-  const efsSecurityGroup = new aws.ec2.SecurityGroup(`${stack}-efs-sg`, {
-    name: `${stack}-efs-sg`,
-    vpcId: vpc.vpcId,
-    ingress: [
-      {
-        protocol: 'tcp',
-        fromPort: 2049,
-        toPort: 2049,
-        description: 'allow NFS access for EFS from ECS',
-        securityGroups: [fargateSecGroup.id],
-      },
-    ],
-    egress: [
-      {
-        protocol: 'tcp',
-        fromPort: 2049,
-        toPort: 2049,
-        securityGroups: [fargateSecGroup.id],
-      },
-    ],
-  });
+    const efsSecurityGroup = new aws.ec2.SecurityGroup(`${stack}-efs-sg`, {
+      name: `${stack}-efs-sg`,
+      vpcId: vpc.vpcId,
+      ingress: [
+        {
+          protocol: 'tcp',
+          fromPort: 2049,
+          toPort: 2049,
+          description: 'allow NFS access for EFS from ECS',
+          securityGroups: [fargateSecGroup.id],
+        },
+      ],
+      egress: [
+        {
+          protocol: 'tcp',
+          fromPort: 2049,
+          toPort: 2049,
+          securityGroups: [fargateSecGroup.id],
+        },
+      ],
+    });
 
-  efsPrivateMountTarget = new aws.efs.MountTarget(`${stack}-mount-target`, {
-    fileSystemId: efs.id,
-    subnetId: vpc.publicSubnetIds[0],
-    securityGroups: [efsSecurityGroup.id],
-  });
+    efsPrivateMountTarget = new aws.efs.MountTarget(`${stack}-mount-target`, {
+      fileSystemId: efs.id,
+      subnetId: vpc.publicSubnetIds[0],
+      securityGroups: [efsSecurityGroup.id],
+    });
+  }
 }
 
 if (useRedis) {
@@ -369,7 +376,7 @@ if (useRedis) {
   });
 }
 
-let alb: ApplicationLoadBalancer;
+let alb: ApplicationLoadBalancer | undefined;
 // Export the URL so we can easily access it.
 let frontendUrl;
 
@@ -407,46 +414,48 @@ if (subDomain && domain) {
     }
   );
 
-  // Creates an ALB associated with our custom VPC.
-  alb = new awsx.lb.ApplicationLoadBalancer(`${stack}-alb`, {
-    securityGroups: [albSecGroup.id],
-    name: `${stack}-alb`,
-    subnetIds: vpc.publicSubnetIds,
-    listeners: [
-      {
-        port: 80, // port on the docker container
-        protocol: 'HTTP',
-        defaultActions: [
-          {
-            type: 'redirect',
-            redirect: {
-              protocol: 'HTTPS',
-              port: '443',
-              statusCode: 'HTTP_301',
+  if (!ALL_OFF) {
+    // Creates an ALB associated with our custom VPC.
+    alb = new awsx.lb.ApplicationLoadBalancer(`${stack}-alb`, {
+      securityGroups: [albSecGroup.id],
+      name: `${stack}-alb`,
+      subnetIds: vpc.publicSubnetIds,
+      listeners: [
+        {
+          port: 80, // port on the docker container
+          protocol: 'HTTP',
+          defaultActions: [
+            {
+              type: 'redirect',
+              redirect: {
+                protocol: 'HTTPS',
+                port: '443',
+                statusCode: 'HTTP_301',
+              },
             },
-          },
-        ],
+          ],
+        },
+        {
+          protocol: 'HTTPS',
+          port: 443,
+          certificateArn: certificateValidation.certificateArn,
+        },
+      ],
+      defaultTargetGroup: {
+        name: `${stack}-alb-tg`,
+        port: 80, // port on the docker container ,
       },
-      {
-        protocol: 'HTTPS',
-        port: 443,
-        certificateArn: certificateValidation.certificateArn,
-      },
-    ],
-    defaultTargetGroup: {
-      name: `${stack}-alb-tg`,
-      port: 80, // port on the docker container ,
-    },
-  });
+    });
 
-  // Create a DNS record for the load balancer
-  const albDomain = new aws.route53.Record(fullDomain, {
-    name: fullDomain,
-    zoneId: hostedZoneId,
-    type: 'CNAME',
-    records: [alb.loadBalancer.dnsName],
-    ttl: 600,
-  });
+    // Create a DNS record for the load balancer
+    new aws.route53.Record(fullDomain, {
+      name: fullDomain,
+      zoneId: hostedZoneId,
+      type: 'CNAME',
+      records: [alb.loadBalancer.dnsName],
+      ttl: 600,
+    });
+  }
 
   frontendUrl = pulumi.interpolate`https://${subDomain}.${domain}`;
 } else {
@@ -499,7 +508,7 @@ const environmentVariables = [
   },
   {
     name: 'AP_EXECUTION_MODE',
-    value: 'SANDBOXED',
+    value: 'SANDBOX_CODE_ONLY',
   },
   {
     name: 'AP_REDIS_USE_SSL',
@@ -520,6 +529,10 @@ const environmentVariables = [
   {
     name: 'AP_SHOW_SIGN_UP_LINK',
     value: 'false',
+  },
+  {
+    name: 'AP_CONFIG_PATH',
+    value: '/',
   },
 ];
 
@@ -543,7 +556,7 @@ const fargateService = new awsx.ecs.FargateService(`${stack}-fg`, {
       memory: containerMemory,
       portMappings: [
         {
-          targetGroup: alb.defaultTargetGroup,
+          targetGroup: alb?.defaultTargetGroup,
         },
       ],
       environment: environmentVariables,
