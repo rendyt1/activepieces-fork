@@ -7,7 +7,7 @@ import { registerAutoTags } from './autotag';
 import * as child_process from 'child_process';
 
 const ALL_OFF = false;
-const PERSIST_EFS = false;
+const PERSIST_EFS = true;
 
 const stack = pulumi.getStack();
 const config = new pulumi.Config();
@@ -536,6 +536,12 @@ const environmentVariables = [
   },
 ];
 
+const ecsRoleArn = aws.iam
+  .getRole({
+    name: 'EcsServiceRole',
+  })
+  .then((role) => role.arn);
+
 const fargateService = new awsx.ecs.FargateService(`${stack}-fg`, {
   name: `${stack}-fg`,
   cluster: new aws.ecs.Cluster(`${stack}-cluster`, {
@@ -547,31 +553,39 @@ const fargateService = new awsx.ecs.FargateService(`${stack}-fg`, {
     assignPublicIp: true,
   },
   desiredCount: containerInstances,
+  enableExecuteCommand: true,
   taskDefinitionArgs: {
+    taskRole: {
+      roleArn: ecsRoleArn,
+    },
     family: `${stack}-fg-task-definition`,
     container: {
       name: 'activepieces',
       image: imageName,
       cpu: containerCpu,
       memory: containerMemory,
-      portMappings: [
-        {
-          targetGroup: alb?.defaultTargetGroup,
-        },
-      ],
+      ...(alb && {
+        portMappings: [
+          {
+            targetGroup: alb?.defaultTargetGroup,
+          },
+        ],
+      }),
       environment: environmentVariables,
     },
-    ...(!usePostgres && {
-      volumes: [
-        {
-          name: `${stack}-volume`,
-          efsVolumeConfiguration: {
-            fileSystemId: efsPrivateMountTarget.fileSystemId,
-            transitEncryption: 'ENABLED',
-          },
-        },
-      ],
-    }),
+    ...(!usePostgres && PERSIST_EFS
+      ? {
+          volumes: [
+            {
+              name: `${stack}-volume`,
+              efsVolumeConfiguration: {
+                fileSystemId: efsPrivateMountTarget.fileSystemId,
+                transitEncryption: 'ENABLED',
+              },
+            },
+          ],
+        }
+      : {}),
   },
 });
 
