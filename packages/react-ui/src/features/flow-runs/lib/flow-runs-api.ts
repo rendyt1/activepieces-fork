@@ -4,7 +4,6 @@ import { Socket } from 'socket.io-client';
 import { api } from '@/lib/api';
 import {
   FlowRun,
-  SeekPage,
   ListFlowRunsRequestQuery,
   RetryFlowRequestBody,
   TestFlowRunRequestBody,
@@ -12,7 +11,8 @@ import {
   WebsocketClientEvent,
   CreateStepRunRequestBody,
   StepRunResponse,
-  isFlowStateTerminal,
+  BulkRetryFlowRequestBody,
+  SeekPage,
 } from '@activepieces/shared';
 
 export const flowRunsApi = {
@@ -22,6 +22,9 @@ export const flowRunsApi = {
   getPopulated(id: string): Promise<FlowRun> {
     return api.get<FlowRun>(`/v1/flow-runs/${id}`);
   },
+  bulkRetry(request: BulkRetryFlowRequestBody): Promise<FlowRun[]> {
+    return api.post<FlowRun[]>('/v1/flow-runs/retry', request);
+  },
   retry(flowRunId: string, request: RetryFlowRequestBody): Promise<FlowRun> {
     return api.post<FlowRun>(`/v1/flow-runs/${flowRunId}/retry`, request);
   },
@@ -29,36 +32,10 @@ export const flowRunsApi = {
     socket: Socket,
     request: TestFlowRunRequestBody,
     onUpdate: (response: FlowRun) => void,
-  ) {
+  ): Promise<void> {
     socket.emit(WebsocketServerEvent.TEST_FLOW_RUN, request);
-    const run = await getInitialRun(socket, request.flowVersionId);
-
-    onUpdate(run);
-    return new Promise<void>((resolve, reject) => {
-      const handleProgress = (response: FlowRun) => {
-        if (run.id !== response.id) {
-          return;
-        }
-        onUpdate(response);
-        if (isFlowStateTerminal(response.status)) {
-          socket.off(
-            WebsocketClientEvent.TEST_FLOW_RUN_PROGRESS,
-            handleProgress,
-          );
-          socket.off('error', handleError);
-          resolve();
-        }
-      };
-
-      const handleError = (error: any) => {
-        socket.off(WebsocketClientEvent.TEST_FLOW_RUN_PROGRESS, handleProgress);
-        socket.off('error', handleError);
-        reject(error);
-      };
-
-      socket.on(WebsocketClientEvent.TEST_FLOW_RUN_PROGRESS, handleProgress);
-      socket.on('error', handleError);
-    });
+    const initialRun = await getInitialRun(socket, request.flowVersionId);
+    onUpdate(initialRun);
   },
   testStep(
     socket: Socket,
@@ -78,6 +55,8 @@ export const flowRunsApi = {
             handleStepFinished,
           );
           socket.off('error', handleError);
+          console.log('clear TEST_STEP_FINISHED listener' + response.id);
+
           resolve(response);
         }
       };
@@ -85,10 +64,11 @@ export const flowRunsApi = {
       const handleError = (error: any) => {
         socket.off(WebsocketClientEvent.TEST_STEP_FINISHED, handleStepFinished);
         socket.off('error', handleError);
+        console.log('clear TEST_STEP_FINISHED listener', error);
         reject(error);
       };
-
       socket.on(WebsocketClientEvent.TEST_STEP_FINISHED, handleStepFinished);
+      console.log('listened to TEST_STEP_FINISHED');
       socket.on('error', handleError);
     });
   },
@@ -103,9 +83,11 @@ function getInitialRun(
         return;
       }
       socket.off(WebsocketClientEvent.TEST_FLOW_RUN_STARTED, onRunStarted);
+      console.log('clear TEST_FLOW_RUN_STARTED listener' + run.id);
       resolve(run);
     };
 
     socket.on(WebsocketClientEvent.TEST_FLOW_RUN_STARTED, onRunStarted);
+    console.log('listened to TEST_FLOW_RUN_STARTED');
   });
 }

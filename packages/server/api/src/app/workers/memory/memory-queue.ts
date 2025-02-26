@@ -1,7 +1,9 @@
 import { WebhookRenewStrategy } from '@activepieces/pieces-framework'
-import { JobType, LATEST_JOB_DATA_SCHEMA_VERSION, logger, OneTimeJobData, QueueName, RepeatableJobType, ScheduledJobData, WebhookJobData } from '@activepieces/server-shared'
+import { JobType, LATEST_JOB_DATA_SCHEMA_VERSION, OneTimeJobData, QueueName, RepeatableJobType, ScheduledJobData, UserInteractionJobData, WebhookJobData } from '@activepieces/server-shared'
 import { DelayPauseMetadata, Flow, FlowRun, FlowRunStatus, isNil, PauseType, ProgressUpdateType, RunEnvironment, TriggerType } from '@activepieces/shared'
 import dayjs from 'dayjs'
+import { FastifyBaseLogger } from 'fastify'
+import { nanoid } from 'nanoid'
 import { flowService } from '../../flows/flow/flow.service'
 import { flowRunRepo } from '../../flows/flow-run/flow-run-service'
 import { flowVersionService } from '../../flows/flow-version/flow-version.service'
@@ -9,36 +11,36 @@ import { triggerUtils } from '../../flows/trigger/hooks/trigger-utils'
 import { QueueManager } from '../queue/queue-manager'
 import { ApMemoryQueue } from './ap-memory-queue'
 
-
 export const memoryQueues = {
     [QueueName.ONE_TIME]: new ApMemoryQueue<OneTimeJobData>(),
     [QueueName.SCHEDULED]: new ApMemoryQueue<ScheduledJobData>(),
     [QueueName.WEBHOOK]: new ApMemoryQueue<WebhookJobData>(),
+    [QueueName.USERS_INTERACTION]: new ApMemoryQueue<UserInteractionJobData>(),
 }
 
-export const memoryQueue: QueueManager = {
+export const memoryQueue = (log: FastifyBaseLogger): QueueManager => ({
     async removeRepeatingJob({ flowVersionId }) {
         await memoryQueues[QueueName.SCHEDULED].remove(flowVersionId)
     },
     async init(): Promise<void> {
-        await renewWebhooks()
-        await renewEnabledRepeating()
-        await addDelayedRun()
+        await renewWebhooks(log)
+        await renewEnabledRepeating(log)
+        await addDelayedRun(log)
     },
     async add(params) {
-        const { type, data, id } = params
+        const { type, data } = params
         switch (type) {
             case JobType.ONE_TIME: {
                 memoryQueues[QueueName.ONE_TIME].add({
-                    id,
+                    id: params.id,
                     data,
                 })
                 break
             }
             case JobType.REPEATING: {
                 memoryQueues[QueueName.SCHEDULED].add({
+                    id: nanoid(),
                     data,
-                    id,
                     cronExpression: params.scheduleOptions.cronExpression,
                     cronTimezone: params.scheduleOptions.timezone,
                     failureCount: params.scheduleOptions.failureCount,
@@ -47,22 +49,29 @@ export const memoryQueue: QueueManager = {
             }
             case JobType.DELAYED: {
                 memoryQueues[QueueName.SCHEDULED].add({
-                    id,
+                    id: params.id,
                     data,
                     nextFireAtEpochSeconds: dayjs().add(params.delay, 'ms').unix(),
                 })
                 break
             }
+            case JobType.USERS_INTERACTION: {
+                memoryQueues[QueueName.USERS_INTERACTION].add({
+                    id: params.id,
+                    data,
+                })
+                break
+            }
             case JobType.WEBHOOK: {
                 memoryQueues[QueueName.WEBHOOK].add({
-                    id,
+                    id: params.id,
                     data,
                 })
                 break
             }
         }
     },
-}
+})
 
 type FlowWithRenewWebhook = {
     flow: Flow
@@ -72,7 +81,7 @@ type FlowWithRenewWebhook = {
     }
 }
 
-async function addDelayedRun(): Promise<void> {
+async function addDelayedRun(log: FastifyBaseLogger): Promise<void> {
     const flowRuns = await flowRunRepo().findBy({
         status: FlowRunStatus.PAUSED,
     })
@@ -84,7 +93,7 @@ async function addDelayedRun(): Promise<void> {
                 dayjs(delayPauseMetadata.resumeDateTime).diff(dayjs(), 'ms'),
             )
 
-            memoryQueue.add({
+            memoryQueue(log).add({
                 id: flowRun.id,
                 type: JobType.DELAYED,
                 data: {
@@ -98,16 +107,16 @@ async function addDelayedRun(): Promise<void> {
                     progressUpdateType: delayPauseMetadata.progressUpdateType ?? ProgressUpdateType.NONE,
                 },
                 delay,
-            }).catch((e) => logger.error(e, '[MemoryQueue#init] add'))
+            }).catch((e) => log.error(e, '[MemoryQueue#init] add'))
         }
     })
 }
 
-async function renewEnabledRepeating(): Promise<void> {
-    const enabledFlows = await flowService.getAllEnabled()
+async function renewEnabledRepeating(log: FastifyBaseLogger): Promise<void> {
+    const enabledFlows = await flowService(log).getAllEnabled()
     const enabledRepeatingFlows = enabledFlows.filter((flow) => flow.schedule)
     enabledRepeatingFlows.forEach((flow) => {
-        memoryQueue.add({
+        memoryQueue(log).add({
             id: flow.id,
             type: JobType.REPEATING,
             data: {
@@ -124,16 +133,16 @@ async function renewEnabledRepeating(): Promise<void> {
                 timezone: flow.schedule!.timezone,
                 failureCount: flow.schedule!.failureCount ?? 0,
             },
-        }).catch((e) => logger.error(e, '[MemoryQueue#init] add'))
+        }).catch((e) => log.error(e, '[MemoryQueue#init] add'))
     })
 }
 
-async function renewWebhooks(): Promise<void> {
-    const enabledFlows = await flowService.getAllEnabled()
+async function renewWebhooks(log: FastifyBaseLogger): Promise<void> {
+    const enabledFlows = await flowService(log).getAllEnabled()
     const enabledRenewWebhookFlows = (
         await Promise.all(
             enabledFlows.map(async (flow) => {
-                const flowVersion = await flowVersionService.getOneOrThrow(
+                const flowVersion = await flowVersionService(log).getOneOrThrow(
                     flow.publishedVersionId!,
                 )
                 const trigger = flowVersion.trigger
@@ -142,13 +151,13 @@ async function renewWebhooks(): Promise<void> {
                     return null
                 }
 
-                const piece = await triggerUtils.getPieceTrigger({
+                const piece = await triggerUtils(log).getPieceTrigger({
                     trigger,
                     projectId: flow.projectId,
                 })
 
                 if (isNil(piece)) {
-                    logger.warn( {
+                    log.warn({
                         trigger,
                         flowId: flow.id,
                     },
@@ -174,7 +183,7 @@ async function renewWebhooks(): Promise<void> {
         )
     ).filter((flow): flow is FlowWithRenewWebhook => flow !== null)
     enabledRenewWebhookFlows.forEach(({ flow, scheduleOptions }) => {
-        memoryQueue.add({
+        memoryQueue(log).add({
             id: flow.id,
             type: JobType.REPEATING,
             data: {
@@ -188,6 +197,6 @@ async function renewWebhooks(): Promise<void> {
                 ...scheduleOptions,
                 failureCount: 0,
             },
-        }).catch((e) => logger.error(e, '[MemoryQueue#init] add'))
+        }).catch((e) => log.error(e, '[MemoryQueue#init] add'))
     })
 }

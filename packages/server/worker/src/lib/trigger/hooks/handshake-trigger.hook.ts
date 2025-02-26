@@ -10,18 +10,21 @@ import {
     TriggerHookType,
     TriggerPayload,
 } from '@activepieces/shared'
+import { FastifyBaseLogger } from 'fastify'
 import { engineApiService } from '../../api/server-api.service'
 import { engineRunner } from '../../engine'
+import { workerMachine } from '../../utils/machine'
 import { webhookUtils } from '../../utils/webhook-utils'
 
 export async function tryHandshake(
     engineToken: string,
     params: ExecuteHandshakeParams,
+    log: FastifyBaseLogger,
 ): Promise<WebhookResponse | null> {
     const { payload, flowVersion, projectId } = params
 
     const settings = flowVersion.trigger.settings as PieceTriggerSettings
-    const pieceMetadata = await engineApiService(engineToken).getPiece(settings.pieceName, {
+    const pieceMetadata = await engineApiService(engineToken, log).getPiece(settings.pieceName, {
         version: settings.pieceVersion,
     })
     const tirggerName = settings.triggerName
@@ -44,7 +47,7 @@ export async function tryHandshake(
                     flowVersion,
                     projectId,
                     payload,
-                })
+                }, log)
             }
             break
         }
@@ -58,7 +61,7 @@ export async function tryHandshake(
                     flowVersion,
                     projectId,
                     payload,
-                })
+                }, log)
             }
             break
         }
@@ -74,7 +77,7 @@ export async function tryHandshake(
                     flowVersion,
                     projectId,
                     payload,
-                })
+                }, log)
             }
             break
         }
@@ -86,15 +89,17 @@ export async function tryHandshake(
 
 async function executeHandshake(
     params: ExecuteHandshakeParams,
+    log: FastifyBaseLogger,
 ): Promise<WebhookResponse> {
     const { flowVersion, projectId, payload } = params
-    const { result } = await engineRunner.executeTrigger(params.engineToken, {
+    const { result } = await engineRunner(log).executeTrigger(params.engineToken, {
         hookType: TriggerHookType.HANDSHAKE,
         flowVersion,
         triggerPayload: payload,
-        webhookUrl: await webhookUtils.getWebhookUrl({
+        webhookUrl: await webhookUtils(log).getWebhookUrl({
             flowId: flowVersion.flowId,
             simulate: false,
+            publicApiUrl: workerMachine.getPublicApiUrl(),
         }),
         test: false,
         projectId,

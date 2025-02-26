@@ -2,10 +2,10 @@
 import { PieceMetadataModel, PieceMetadataModelSummary } from '@activepieces/pieces-framework'
 import { ActivepiecesError, apId, assertNotNullOrUndefined, ErrorCode, EXACT_VERSION_REGEX, isNil, ListVersionsResponse, PieceType } from '@activepieces/shared'
 import dayjs from 'dayjs'
+import { FastifyBaseLogger } from 'fastify'
 import semVer from 'semver'
 import { IsNull } from 'typeorm'
 import { repoFactory } from '../../core/db/repo-factory'
-import { projectService } from '../../project/project-service'
 import { pieceTagService } from '../../tags/pieces/piece-tag.service'
 import {
     PieceMetadataEntity,
@@ -18,10 +18,13 @@ import { toPieceMetadataModelSummary } from '.'
 
 const repo = repoFactory(PieceMetadataEntity)
 
-export const FastDbPieceMetadataService = (): PieceMetadataService => {
+export const FastDbPieceMetadataService = (log: FastifyBaseLogger): PieceMetadataService => {
     return {
         async list(params): Promise<PieceMetadataModelSummary[]> {
-            const originalPieces = await findAllPiecesVersionsSortedByNameAscVersionDesc(params)
+            const originalPieces = await findAllPiecesVersionsSortedByNameAscVersionDesc({
+                ...params,
+                log,
+            })
             const uniquePieces = new Set<string>(originalPieces.map((piece) => piece.name))
             const latestVersionOfEachPiece = Array.from(uniquePieces).map((name) => {
                 const result = originalPieces.find((piece) => piece.name === name)
@@ -42,19 +45,15 @@ export const FastDbPieceMetadataService = (): PieceMetadataService => {
             })
             return toPieceMetadataModelSummary(filteredPieces, piecesWithTags, params.suggestionType)
         },
-        async get({ projectId, version, name }): Promise<PieceMetadataModel | undefined> {
-            let platformId: string | undefined = undefined
-            if (!isNil(projectId)) {
-                // TODO: this might be database intensive, consider caching, passing platform id from caller cause major changes
-                // Don't use GetOneOrThrow Anonymous Token generates random string for project id
-                const project = await projectService.getOne(projectId)
-                platformId = project?.platformId
-            }
+        async get({ projectId, platformId, version, name }): Promise<PieceMetadataModel | undefined> {
             const versionToSearch = findNextExcludedVersion(version)
-
-            const originalPieces = await findAllPiecesVersionsSortedByNameAscVersionDesc({ projectId, platformId, release: undefined })
+            const originalPieces = await findAllPiecesVersionsSortedByNameAscVersionDesc({
+                projectId,
+                platformId,
+                release: undefined,
+                log,
+            })
             const piece = originalPieces.find((piece) => {
-
                 const strictlyLessThan = (isNil(versionToSearch) || (
                     semVer.compare(piece.version, versionToSearch.nextExcludedVersion) < 0
                     && semVer.compare(piece.version, versionToSearch.baseVersion) >= 0
@@ -63,8 +62,8 @@ export const FastDbPieceMetadataService = (): PieceMetadataService => {
             })
             return piece
         },
-        async getOrThrow({ projectId, version, name }): Promise<PieceMetadataModel> {
-            const piece = await this.get({ projectId, version, name })
+        async getOrThrow({ projectId, version, name, platformId }): Promise<PieceMetadataModel> {
+            const piece = await this.get({ projectId, version, name, platformId })
             if (isNil(piece)) {
                 throw new ActivepiecesError({
                     code: ErrorCode.ENTITY_NOT_FOUND,
@@ -76,30 +75,17 @@ export const FastDbPieceMetadataService = (): PieceMetadataService => {
             return piece
         },
         async getVersions({ name, projectId, release, platformId }): Promise<ListVersionsResponse> {
-            const pieces = await findAllPiecesVersionsSortedByNameAscVersionDesc({ projectId, platformId, release })
+            const pieces = await findAllPiecesVersionsSortedByNameAscVersionDesc({
+                projectId,
+                platformId,
+                release,
+                log,
+            })
             return pieces.filter(p => p.name === name).reverse()
                 .reduce((record, pieceMetadata) => {
                     record[pieceMetadata.version] = {}
                     return record
                 }, {} as ListVersionsResponse)
-        },
-        async delete({ projectId, id }): Promise<void> {
-            const existingMetadata = await repo().findOneBy({
-                id,
-                projectId: projectId ?? IsNull(),
-            })
-            if (isNil(existingMetadata)) {
-                throw new ActivepiecesError({
-                    code: ErrorCode.ENTITY_NOT_FOUND,
-                    params: {
-                        message: `piece_metadata_not_found id=${id}`,
-                    },
-                })
-            }
-            await repo().delete({
-                id,
-                projectId: projectId ?? IsNull(),
-            })
         },
         async updateUsage({ id, usage }): Promise<void> {
             const existingMetadata = await repo().findOneByOrFail({
@@ -111,7 +97,7 @@ export const FastDbPieceMetadataService = (): PieceMetadataService => {
                 created: existingMetadata.created,
             })
         },
-        async getExactPieceVersion({ name, version, projectId }): Promise<string> {
+        async getExactPieceVersion({ name, version, projectId, platformId }): Promise<string> {
             const isExactVersion = EXACT_VERSION_REGEX.test(version)
 
             if (isExactVersion) {
@@ -122,6 +108,7 @@ export const FastDbPieceMetadataService = (): PieceMetadataService => {
                 projectId,
                 name,
                 version,
+                platformId,
             })
 
             return pieceMetadata.version
@@ -243,8 +230,8 @@ const increaseMajorVersion = (version: string): string => {
     return incrementedVersion
 }
 
-async function findAllPiecesVersionsSortedByNameAscVersionDesc({ projectId, platformId, release }: { projectId?: string, platformId?: string, release: string | undefined }): Promise<PieceMetadataSchema[]> {
-    const piece = (await localPieceCache.getSortedbyNameAscThenVersionDesc()).filter((piece) => {
+async function findAllPiecesVersionsSortedByNameAscVersionDesc({ projectId, platformId, release, log }: { projectId?: string, platformId?: string, release: string | undefined, log: FastifyBaseLogger }): Promise<PieceMetadataSchema[]> {
+    const piece = (await localPieceCache(log).getSortedbyNameAscThenVersionDesc()).filter((piece) => {
         return isOfficialPiece(piece) || isProjectPiece(projectId, piece) || isPlatformPiece(platformId, piece)
     }).filter((piece) => isSupportedRelease(release, piece))
     return piece

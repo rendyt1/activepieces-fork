@@ -1,13 +1,16 @@
 import {
     ExecutionType,
+    FlowVersion,
+    GetFlowVersionForWorkerRequestType,
+    PiecePackage,
     ProgressUpdateType,
     RunEnvironment,
+    TriggerHookType,
     TriggerType,
 } from '@activepieces/shared'
 import { Static, Type } from '@sinclair/typebox'
 
 export const LATEST_JOB_DATA_SCHEMA_VERSION = 4
-
 
 export enum RepeatableJobType {
     RENEW_WEBHOOK = 'RENEW_WEBHOOK',
@@ -48,11 +51,14 @@ export const DelayedJobData = Type.Object({
     synchronousHandlerId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     progressUpdateType: Type.Optional(Type.Enum(ProgressUpdateType)),
     jobType: Type.Literal(RepeatableJobType.DELAYED_FLOW),
-
 })
 export type DelayedJobData = Static<typeof DelayedJobData>
 
-export const ScheduledJobData = Type.Union([RepeatingJobData, DelayedJobData, RenewWebhookJobData])
+export const ScheduledJobData = Type.Union([
+    RepeatingJobData,
+    DelayedJobData,
+    RenewWebhookJobData,
+])
 export type ScheduledJobData = Static<typeof ScheduledJobData>
 
 export const OneTimeJobData = Type.Object({
@@ -76,9 +82,103 @@ export const WebhookJobData = Type.Object({
     synchronousHandlerId: Type.Union([Type.String(), Type.Null()]),
     payload: Type.Any(),
     flowId: Type.String(),
-    simulate: Type.Boolean(),
+    saveSampleData: Type.Boolean(),
+    flowVersionToRun: Type.Optional(Type.Union([
+        Type.Literal(GetFlowVersionForWorkerRequestType.LOCKED),
+        Type.Literal(GetFlowVersionForWorkerRequestType.LATEST),
+    ])),
 })
 export type WebhookJobData = Static<typeof WebhookJobData>
 
-export const JobData = Type.Union([ScheduledJobData, OneTimeJobData, WebhookJobData])
+
+export enum UserInteractionJobType {
+    EXECUTE_VALIDATION = 'EXECUTE_VALIDATION',
+    EXECUTE_ACTION = 'EXECUTE_ACTION',
+    EXECUTE_TRIGGER_HOOK = 'EXECUTE_TRIGGER_HOOK',
+    EXECUTE_PROPERTY = 'EXECUTE_PROPERTY',
+    EXECUTE_EXTRACT_PIECE_INFORMATION = 'EXECUTE_EXTRACT_PIECE_INFORMATION',
+}
+
+export const ExecuteValidateAuthJobData = Type.Object({
+    requestId: Type.String(),
+    webserverId: Type.String(),
+    jobType: Type.Literal(UserInteractionJobType.EXECUTE_VALIDATION),
+    projectId: Type.Optional(Type.String()),
+    platformId: Type.String(),
+    piece: PiecePackage,
+    connectionValue: Type.Unknown(),
+})
+export type ExecuteValidateAuthJobData = Static<typeof ExecuteValidateAuthJobData>
+
+export const ExecuteActionJobData = Type.Object({
+    requestId: Type.String(),
+    jobType: Type.Literal(UserInteractionJobType.EXECUTE_ACTION),
+    projectId: Type.String(),
+    flowVersion: FlowVersion,
+    stepName: Type.String(),
+    webserverId: Type.String(),
+    sampleData: Type.Record(Type.String(), Type.Unknown()),
+})
+export type ExecuteActionJobData = Static<typeof ExecuteActionJobData>
+
+export const ExecuteTriggerHookJobData = Type.Object({
+    requestId: Type.String(),
+    jobType: Type.Literal(UserInteractionJobType.EXECUTE_TRIGGER_HOOK),
+    projectId: Type.String(),
+    flowVersion: FlowVersion,
+    test: Type.Boolean(),
+    webserverId: Type.String(),
+    hookType: Type.Enum(TriggerHookType),
+})
+export type ExecuteTriggerHookJobData = Static<typeof ExecuteTriggerHookJobData>
+
+export const ExecutePropertyJobData = Type.Object({
+    requestId: Type.String(),
+    jobType: Type.Literal(UserInteractionJobType.EXECUTE_PROPERTY),
+    projectId: Type.String(),
+    flowVersion: FlowVersion,
+    propertyName: Type.String(),
+    piece: PiecePackage,
+    actionOrTriggerName: Type.String(),
+    input: Type.Record(Type.String(), Type.Unknown()),
+    webserverId: Type.String(),
+    sampleData: Type.Record(Type.String(), Type.Unknown()),
+    searchValue: Type.Optional(Type.String()),
+})
+export type ExecutePropertyJobData = Static<typeof ExecutePropertyJobData>
+
+export const ExecuteExtractPieceMetadataJobData = Type.Object({
+    requestId: Type.String(),
+    webserverId: Type.String(),
+    jobType: Type.Literal(UserInteractionJobType.EXECUTE_EXTRACT_PIECE_INFORMATION),
+    projectId: Type.Optional(Type.String()),
+    platformId: Type.String(),
+    piece: PiecePackage,
+})
+export type ExecuteExtractPieceMetadataJobData = Static<typeof ExecuteExtractPieceMetadataJobData>
+
+export const UserInteractionJobData = Type.Union([
+    ExecuteValidateAuthJobData,
+    ExecuteActionJobData,
+    ExecuteTriggerHookJobData,
+    ExecutePropertyJobData,
+    ExecuteExtractPieceMetadataJobData,
+])
+export type UserInteractionJobData = Static<typeof UserInteractionJobData>
+
+export const UserInteractionJobDataWithoutWatchingInformation = Type.Union([
+    Type.Omit(ExecuteValidateAuthJobData, ['webserverId', 'requestId']),
+    Type.Omit(ExecuteActionJobData, ['webserverId', 'requestId']),
+    Type.Omit(ExecuteTriggerHookJobData, ['webserverId', 'requestId']),
+    Type.Omit(ExecutePropertyJobData, ['webserverId', 'requestId']),
+    Type.Omit(ExecuteExtractPieceMetadataJobData, ['webserverId', 'requestId']),
+])
+export type UserInteractionJobDataWithoutWatchingInformation = Static<typeof UserInteractionJobDataWithoutWatchingInformation>
+
+export const JobData = Type.Union([
+    ScheduledJobData,
+    OneTimeJobData,
+    WebhookJobData,
+    UserInteractionJobData,
+])
 export type JobData = Static<typeof JobData>

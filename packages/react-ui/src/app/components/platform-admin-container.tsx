@@ -2,10 +2,9 @@ import { t } from 'i18next';
 import {
   LayoutGrid,
   LineChart,
-  LogsIcon,
-  Puzzle,
-  UserCog,
-  Workflow,
+  Server,
+  Shield,
+  Users,
   Wrench,
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
@@ -33,13 +32,12 @@ export function PlatformAdminContainer({
 
   const showPlatformAdminDashboard = useShowPlatformAdminDashboard();
   const isLocked = (locked: boolean) => locked || (showPlatformDemo ?? false);
-
   const links: SidebarLink[] = [
     {
       to: '/platform/analytics',
       label: t('Overview'),
       icon: LineChart,
-      locked: isLocked(false),
+      locked: isLocked(!platform.analyticsEnabled),
     },
     {
       to: '/platform/projects',
@@ -48,32 +46,24 @@ export function PlatformAdminContainer({
       locked: isLocked(!platform.manageProjectsEnabled),
     },
     {
-      to: '/platform/audit-logs',
-      label: t('Audit Logs'),
-      icon: LogsIcon,
-      locked: isLocked(!platform.auditLogEnabled),
-    },
-    {
-      to: '/platform/pieces',
-      label: t('Pieces'),
-      icon: Puzzle,
-    },
-    {
-      to: '/platform/templates',
-      label: t('Templates'),
-      icon: Workflow,
-      locked: isLocked(!platform.manageTemplatesEnabled),
-    },
-    {
       to: '/platform/users',
       label: t('Users'),
-      icon: UserCog,
-      locked: isLocked(false),
+      icon: Users,
     },
     {
-      to: '/platform/settings',
-      label: t('Settings'),
+      to: '/platform/setup',
+      label: t('Setup'),
       icon: Wrench,
+    },
+    {
+      to: '/platform/security',
+      label: t('Security'),
+      icon: Shield,
+    },
+    {
+      to: '/platform/infrastructure',
+      label: t('Infra'),
+      icon: Server,
     },
   ];
 
@@ -82,7 +72,7 @@ export function PlatformAdminContainer({
       {showPlatformAdminDashboard ? (
         <Sidebar links={links}>{children}</Sidebar>
       ) : (
-        <Navigate to="/flows" />
+        <Navigate to="/" />
       )}
     </AllowOnlyLoggedInUserOnlyGuard>
   );

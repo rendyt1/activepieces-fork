@@ -1,21 +1,20 @@
 import { PlatformRole, PrincipalType } from '@activepieces/shared'
 import { FastifyInstance } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
+import { initializeDatabase } from '../../../../src/app/database'
 import { databaseConnection } from '../../../../src/app/database/database-connection'
 import { setupServer } from '../../../../src/app/server'
 import { generateMockToken } from '../../../helpers/auth'
 import {
     createAuditEvent,
-    createMockPlatform,
-    createMockProject,
-    createMockUser,
-    mockBasicSetup,
+    mockAndSaveBasicSetup,
+    mockBasicUser,
 } from '../../../helpers/mocks'
 
 let app: FastifyInstance | null = null
 
 beforeAll(async () => {
-    await databaseConnection().initialize()
+    await initializeDatabase({ runMigrations: false })
     app = await setupServer()
 })
 
@@ -28,8 +27,8 @@ describe('Audit Event API', () => {
     describe('List Audit event API', () => {
         it('should list audit events', async () => {
             // arrange
-            const { mockOwner: mockUserOne, mockPlatform: mockPlatformOne } = await mockBasicSetup()
-            const { mockOwner: mockUserTwo, mockPlatform: mockPlatformTwo } = await mockBasicSetup()
+            const { mockOwner: mockUserOne, mockPlatform: mockPlatformOne } = await mockAndSaveBasicSetup()
+            const { mockOwner: mockUserTwo, mockPlatform: mockPlatformTwo } = await mockAndSaveBasicSetup()
 
 
             await databaseConnection().getRepository('platform').update(mockPlatformOne.id, {
@@ -93,35 +92,31 @@ describe('Audit Event API', () => {
 
         it('should return forbidden if the user is not the owner', async () => {
             // arrange
-            const mockUser1 = createMockUser({ platformRole: PlatformRole.ADMIN })
-            await databaseConnection().getRepository('user').save(mockUser1)
+            const { mockPlatform } = await mockAndSaveBasicSetup()
 
-            const mockPlatform1 = createMockPlatform({ ownerId: mockUser1.id, auditLogEnabled: true })
-            await databaseConnection().getRepository('platform').save(mockPlatform1)
-
-            const mockProject1 = createMockProject({
-                platformId: mockPlatform1.id,
-                ownerId: mockUser1.id,
+            const { mockUser } = await mockBasicUser({
+                user: {
+                    platformId: mockPlatform.id,
+                    platformRole: PlatformRole.MEMBER,
+                },
             })
-            await databaseConnection().getRepository('project').save(mockProject1)
-
-            const testToken1 = await generateMockToken({
+            const testToken = await generateMockToken({
                 type: PrincipalType.USER,
-                id: mockUser1.id,
-                platform: { id: mockPlatform1.id },
+                id: mockUser.id,
+                platform: { id: mockPlatform.id },
             })
 
             // act
-            const response1 = await app?.inject({
+            const response = await app?.inject({
                 method: 'GET',
                 url: '/v1/audit-events',
                 headers: {
-                    authorization: `Bearer ${testToken1}`,
+                    authorization: `Bearer ${testToken}`,
                 },
             })
 
             // assert
-            expect(response1?.statusCode).toBe(StatusCodes.FORBIDDEN)
+            expect(response?.statusCode).toBe(StatusCodes.FORBIDDEN)
         })
     })
 })

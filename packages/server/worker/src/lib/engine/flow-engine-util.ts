@@ -1,4 +1,5 @@
-import { Action, ActionType, assertEqual, CodeAction, EXACT_VERSION_REGEX, flowHelper, FlowVersion, PackageType, PieceActionSettings, PiecePackage, PieceTriggerSettings, PieceType, Trigger, TriggerType } from '@activepieces/shared'
+import { Action, ActionType, assertEqual, CodeAction, EXACT_VERSION_REGEX, flowStructureUtil, FlowVersion, isNil, PackageType, PieceActionSettings, PiecePackage, PieceTriggerSettings, PieceType, Step, Trigger, TriggerType } from '@activepieces/shared'
+import { FastifyBaseLogger } from 'fastify'
 import { engineApiService } from '../api/server-api.service'
 import { CodeArtifact } from './engine-runner'
 
@@ -7,9 +8,9 @@ type ExtractFlowPiecesParams = {
     engineToken: string
 }
 
-export const pieceEngineUtil = {
+export const pieceEngineUtil = (log: FastifyBaseLogger) => ({
     getCodeSteps(flowVersion: FlowVersion): CodeArtifact[] {
-        const steps = flowHelper.getAllSteps(flowVersion.trigger)
+        const steps = flowStructureUtil.getAllSteps(flowVersion.trigger)
         return steps.filter((step) => step.type === ActionType.CODE).map((step) => {
             const codeAction = step as CodeAction
             return {
@@ -24,10 +25,10 @@ export const pieceEngineUtil = {
         flowVersion,
         engineToken,
     }: ExtractFlowPiecesParams): Promise<PiecePackage[]> {
-        const steps = flowHelper.getAllSteps(flowVersion.trigger)
+        const steps = flowStructureUtil.getAllSteps(flowVersion.trigger)
         const pieces = steps.filter((step) => step.type === TriggerType.PIECE || step.type === ActionType.PIECE).map((step) => {
             const { packageType, pieceType, pieceName, pieceVersion } = step.settings as PieceTriggerSettings | PieceActionSettings
-            return pieceEngineUtil.getExactPieceVersion(engineToken, {
+            return pieceEngineUtil(log).getExactPieceVersion(engineToken, {
                 packageType,
                 pieceType,
                 pieceName,
@@ -41,29 +42,27 @@ export const pieceEngineUtil = {
         const { trigger } = flowVersion
         return this.getExactPieceForStep(engineToken, trigger)
     },
-
     async getExactPieceVersion(engineToken: string, piece: BasicPieceInformation): Promise<PiecePackage> {
         const { pieceName, pieceVersion, pieceType, packageType } = piece
 
         switch (packageType) {
             case PackageType.ARCHIVE: {
-                const pieceMetadata = await engineApiService(engineToken).getPiece(pieceName, {
-                    version: pieceVersion,
-                })
-                const archive = await engineApiService(engineToken).getFile(pieceMetadata.archiveId!)
+                const { pieceVersion, archiveId } = await getPieceVersionAndArchiveId(engineToken, piece, log)
+
+                const archive = await engineApiService(engineToken, log).getFile(archiveId!)
 
                 return {
                     packageType,
                     pieceType,
                     pieceName,
-                    pieceVersion: pieceMetadata.version,
-                    archiveId: pieceMetadata.archiveId!,
+                    pieceVersion,
+                    archiveId: archiveId!,
                     archive,
                 }
             }
             case PackageType.REGISTRY: {
                 const exactVersion = EXACT_VERSION_REGEX.test(pieceVersion)
-                const version = exactVersion ? pieceVersion : (await engineApiService(engineToken).getPiece(pieceName, {
+                const version = exactVersion ? pieceVersion : (await engineApiService(engineToken, log).getPiece(pieceName, {
                     version: pieceVersion,
                 })).version
                 return {
@@ -86,42 +85,49 @@ export const pieceEngineUtil = {
             packageType,
         })
     },
-    async lockPieceInFlowVersion({
-        engineToken,
-        flowVersion,
-        stepName,
-    }: {
-        engineToken: string
-        flowVersion: FlowVersion
-        stepName: string
-    }): Promise<FlowVersion> {
-        return flowHelper.transferFlowAsync(flowVersion, async (step) => {
-            if (step.name !== stepName) {
-                return step
-            }
-            if (step.type === TriggerType.PIECE) {
-                const piece = await pieceEngineUtil.getExactPieceForStep(engineToken, step)
-                return {
-                    ...step,
-                    settings: {
-                        ...step.settings,
-                        pieceVersion: piece.pieceVersion,
-                    },
-                }
-            }
-            if (step.type === ActionType.PIECE) {
-                const piece = await pieceEngineUtil.getExactPieceForStep(engineToken, step)
-                return {
-                    ...step,
-                    settings: {
-                        ...step.settings,
-                        pieceVersion: piece.pieceVersion,
-                    },
-                }
+    async lockSingleStepPieceVersion(params: LockFlowVersionParams): Promise<FlowVersion> {
+        const { engineToken, flowVersion } = params
+        const allSteps = flowStructureUtil.getAllSteps(flowVersion.trigger)
+        const pieceSteps = allSteps.filter(step => step.name === params.stepName && isPieceStep(step))
+        const pieces = await Promise.all(pieceSteps.map(step => this.getExactPieceForStep(engineToken, step)))
+        const pieceVersions = pieces.reduce((acc, piece, index) => ({
+            ...acc,
+            [pieceSteps[index].name]: piece.pieceVersion,
+        }), {} as Record<string, string>)
+        return flowStructureUtil.transferFlow(flowVersion, (step) => {
+            if (pieceVersions[step.name]) {
+                step.settings.pieceVersion = pieceVersions[step.name]
             }
             return step
         })
     },
+})
+
+async function getPieceVersionAndArchiveId(engineToken: string, piece: BasicPieceInformation, log: FastifyBaseLogger): Promise<{ pieceVersion: string, archiveId?: string }> {
+    const isExactVersion = EXACT_VERSION_REGEX.test(piece.pieceVersion)
+    if (isNil(piece.archiveId) || !isExactVersion) {
+        const pieceMetadata = await engineApiService(engineToken, log).getPiece(piece.pieceName, {
+            version: piece.pieceVersion,
+        })
+        return {
+            pieceVersion: pieceMetadata.version,
+            archiveId: pieceMetadata.archiveId,
+        }
+    }
+    return {
+        pieceVersion: piece.pieceVersion,
+        archiveId: piece.archiveId,
+    }
+}
+
+const isPieceStep = (step: Step): step is Action | Trigger => {
+    return step.type === TriggerType.PIECE || step.type === ActionType.PIECE
+}
+
+type LockFlowVersionParams = {
+    engineToken: string
+    flowVersion: FlowVersion
+    stepName: string
 }
 
 export type BasicPieceInformation = {
@@ -129,4 +135,5 @@ export type BasicPieceInformation = {
     pieceVersion: string
     pieceType: PieceType
     packageType: PackageType
+    archiveId?: string
 }

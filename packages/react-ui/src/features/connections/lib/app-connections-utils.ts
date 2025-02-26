@@ -1,12 +1,8 @@
-import { CheckIcon, XIcon } from 'lucide-react';
+import { CheckIcon, UnplugIcon, XIcon } from 'lucide-react';
 
 import { AppConnectionStatus } from '@activepieces/shared';
 
 export const appConnectionUtils = {
-  findName(pieceName: string) {
-    const split = pieceName.replaceAll('_', ' ').split('/');
-    return split[split.length - 1].replaceAll('piece-', '');
-  },
   getStatusIcon(status: AppConnectionStatus): {
     variant: 'default' | 'success' | 'error';
     icon: React.ComponentType;
@@ -16,6 +12,11 @@ export const appConnectionUtils = {
         return {
           variant: 'success',
           icon: CheckIcon,
+        };
+      case AppConnectionStatus.MISSING:
+        return {
+          variant: 'default',
+          icon: UnplugIcon,
         };
       case AppConnectionStatus.ERROR:
         return {

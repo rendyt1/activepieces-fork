@@ -3,18 +3,25 @@ import { intercom } from '@activepieces/piece-intercom'
 import { slack } from '@activepieces/piece-slack'
 import { square } from '@activepieces/piece-square'
 import { Piece } from '@activepieces/pieces-framework'
-import { JobType, LATEST_JOB_DATA_SCHEMA_VERSION, logger, rejectedPromiseHandler } from '@activepieces/server-shared'
 import {
-    ActivepiecesError, ALL_PRINCIPAL_TYPES,
+    JobType,
+    LATEST_JOB_DATA_SCHEMA_VERSION,
+    rejectedPromiseHandler,
+} from '@activepieces/server-shared'
+import {
+    ActivepiecesError,
+    ALL_PRINCIPAL_TYPES,
     apId,
     assertNotNullOrUndefined,
     ErrorCode,
+    GetFlowVersionForWorkerRequestType,
     isNil,
 } from '@activepieces/shared'
 import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { FastifyRequest } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
-import { flowQueue } from '../workers/queue'
+import { webhookSimulationService } from '../webhooks/webhook-simulation/webhook-simulation-service'
+import { jobQueue } from '../workers/queue'
 import { DEFAULT_PRIORITY } from '../workers/queue/queue-manager'
 import { appEventRoutingService } from './app-event-routing.service'
 
@@ -76,18 +83,29 @@ export const appEventRoutingController: FastifyPluginAsyncTypebox = async (
             }
             const appName = pieceNames[pieceUrl]
             assertNotNullOrUndefined(piece.events, 'Event is possible in this piece')
-            const { reply, event, identifierValue } = piece.events.parseAndReply({ payload })
+            const { reply, event, identifierValue } = piece.events.parseAndReply({
+                payload,
+            })
             if (!isNil(reply)) {
-                logger.info({
-                    reply,
-                    piece: pieceUrl,
-                }, '[AppEventRoutingController#event] reply')
-                return requestReply.status(StatusCodes.OK).headers(reply?.headers ?? {}).send(reply?.body ?? {})
+                request.log.info(
+                    {
+                        reply,
+                        piece: pieceUrl,
+                    },
+                    '[AppEventRoutingController#event] reply',
+                )
+                return requestReply
+                    .status(StatusCodes.OK)
+                    .headers(reply?.headers ?? {})
+                    .send(reply?.body ?? {})
             }
-            logger.info({
-                event,
-                identifierValue,
-            }, '[AppEventRoutingController#event] event')
+            request.log.info(
+                {
+                    event,
+                    identifierValue,
+                },
+                '[AppEventRoutingController#event] event',
+            )
             if (isNil(event) || isNil(identifierValue)) {
                 return requestReply.status(StatusCodes.BAD_REQUEST).send({})
             }
@@ -98,7 +116,7 @@ export const appEventRoutingController: FastifyPluginAsyncTypebox = async (
             })
             const eventsQueue = listeners.map(async (listener) => {
                 const requestId = apId()
-                return flowQueue.add({
+                return jobQueue(request.log).add({
                     id: requestId,
                     type: JobType.WEBHOOK,
                     data: {
@@ -108,12 +126,14 @@ export const appEventRoutingController: FastifyPluginAsyncTypebox = async (
                         synchronousHandlerId: null,
                         payload,
                         flowId: listener.flowId,
-                        simulate: false,
+                        saveSampleData: await webhookSimulationService(request.log).exists(listener.flowId),
+                        flowVersionToRun: GetFlowVersionForWorkerRequestType.LOCKED,
                     },
                     priority: DEFAULT_PRIORITY,
                 })
             })
-            rejectedPromiseHandler(Promise.all(eventsQueue))
+            rejectedPromiseHandler(Promise.all(eventsQueue), request.log)
             return requestReply.status(StatusCodes.OK).send({})
-        })
+        },
+    )
 }

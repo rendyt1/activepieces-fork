@@ -1,4 +1,4 @@
-FROM node:18.19-bullseye-slim AS base
+FROM node:18.20.5-bullseye-slim AS base
 
 # Use a cache mount for apt to speed up the process
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -9,19 +9,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3 \
         g++ \
         build-essential \
-        git && \
+        git \
+        poppler-utils \
+        poppler-data && \
     yarn config set python /usr/bin/python3 && \
     npm install -g node-gyp
-
-RUN npm i -g \
-  npm@9.3.1 \
-  pnpm@7.28.0 \
-  cross-env@7.0.3
+RUN npm i -g npm@9.9.3 pnpm@9.15.0
 
 # Set the locale
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
+ENV NX_DAEMON=false
 
 
 RUN apt-get update \
@@ -32,12 +31,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # install isolated-vm in a parent directory to avoid linking the package in every sandbox
-RUN cd /usr/src && npm i isolated-vm@4.6.0
+RUN cd /usr/src && npm i isolated-vm@5.0.1
 
-RUN pnpm store add \
-  @tsconfig/node18@1.0.0 \
-  @types/node@18.17.1 \
-  typescript@4.8.4
+RUN pnpm store add @tsconfig/node18@1.0.0
+RUN pnpm store add @types/node@18.17.1
+
+RUN pnpm store add typescript@4.9.4
 
 ### STAGE 1: Build ###
 FROM base AS build

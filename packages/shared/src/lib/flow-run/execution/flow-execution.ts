@@ -10,6 +10,7 @@ export enum FlowRunStatus {
     RUNNING = 'RUNNING',
     STOPPED = 'STOPPED',
     SUCCEEDED = 'SUCCEEDED',
+    MEMORY_LIMIT_EXCEEDED = 'MEMORY_LIMIT_EXCEEDED',
     TIMEOUT = 'TIMEOUT',
 }
 
@@ -55,9 +56,9 @@ export const FlowError = Type.Object({
 export type FlowError = Static<typeof FlowError>
 
 const BaseExecutionResponse = {
-    steps: Type.Record(Type.String(), Type.Unknown()),
+    steps: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     duration: Type.Number(),
-    tasks: Type.Number(),
+    tasks: Type.Optional(Type.Number()),
     tags: Type.Optional(Type.Array(Type.String())),
     error: Type.Optional(FlowError),
     stopResponse: Type.Optional(StopResponse),
@@ -77,6 +78,7 @@ export const FlowRunResponse = Type.Union([
             Type.Literal(FlowRunStatus.QUOTA_EXCEEDED),
             Type.Literal(FlowRunStatus.TIMEOUT),
             Type.Literal(FlowRunStatus.INTERNAL_ERROR),
+            Type.Literal(FlowRunStatus.MEMORY_LIMIT_EXCEEDED),
             Type.Literal(FlowRunStatus.STOPPED),
         ]),
     }),
@@ -84,13 +86,17 @@ export const FlowRunResponse = Type.Union([
 export type FlowRunResponse = Static<typeof FlowRunResponse>
 
 
-export const isFlowStateTerminal = (status: FlowRunStatus): boolean => {
+export const isFlowUserTerminalState = (status: FlowRunStatus): boolean => {
     return status === FlowRunStatus.SUCCEEDED
-        || status == FlowRunStatus.STOPPED
+        || status === FlowRunStatus.STOPPED
         || status === FlowRunStatus.TIMEOUT
-        || status === FlowRunStatus.FAILED 
-        || status === FlowRunStatus.INTERNAL_ERROR 
+        || status === FlowRunStatus.FAILED
         || status === FlowRunStatus.QUOTA_EXCEEDED
+        || status === FlowRunStatus.MEMORY_LIMIT_EXCEEDED
+}
+
+export const isFlowStateTerminal = (status: FlowRunStatus): boolean => {
+    return isFlowUserTerminalState(status) || status === FlowRunStatus.INTERNAL_ERROR
 }
 
 export const isFailedState = (status: FlowRunStatus): boolean => {
@@ -98,4 +104,5 @@ export const isFailedState = (status: FlowRunStatus): boolean => {
         || status === FlowRunStatus.INTERNAL_ERROR
         || status === FlowRunStatus.QUOTA_EXCEEDED
         || status === FlowRunStatus.TIMEOUT
+        || status === FlowRunStatus.MEMORY_LIMIT_EXCEEDED
 }

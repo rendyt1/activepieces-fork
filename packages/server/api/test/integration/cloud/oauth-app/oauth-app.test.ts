@@ -1,16 +1,16 @@
 import { UpsertOAuth2AppRequest } from '@activepieces/ee-shared'
-import { apId, PlatformRole, PrincipalType } from '@activepieces/shared'
+import { PlatformRole, PrincipalType } from '@activepieces/shared'
 import { faker } from '@faker-js/faker'
 import { FastifyInstance } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
+import { initializeDatabase } from '../../../../src/app/database'
 import { databaseConnection } from '../../../../src/app/database/database-connection'
 import { setupServer } from '../../../../src/app/server'
 import { generateMockToken } from '../../../helpers/auth'
 import {
     createMockOAuthApp,
-    createMockPlatform,
-    createMockUser,
-    mockBasicSetup,
+    mockAndSaveBasicSetup,
+    mockBasicUser,
 } from '../../../helpers/mocks'
 
 let app: FastifyInstance | null = null
@@ -22,7 +22,7 @@ const upsertRequest: UpsertOAuth2AppRequest = {
 }
 
 beforeAll(async () => {
-    await databaseConnection().initialize()
+    await initializeDatabase({ runMigrations: false })
     app = await setupServer()
 })
 
@@ -34,19 +34,11 @@ afterAll(async () => {
 describe('OAuth App API', () => {
     describe('Upsert OAuth APP API', () => {
         it('new OAuth App', async () => {
-            const mockUser = createMockUser()
-            await databaseConnection().getRepository('user').save(mockUser)
+            const { mockOwner, mockPlatform } = await mockAndSaveBasicSetup()
 
-            const mockPlatform = createMockPlatform({ ownerId: mockUser.id })
-            await databaseConnection().getRepository('platform').save(mockPlatform)
-
-            await databaseConnection().getRepository('user').update(mockUser.id, {
-                platformId: mockPlatform.id,
-                platformRole: PlatformRole.ADMIN,
-            })
             const testToken = await generateMockToken({
                 type: PrincipalType.USER,
-                id: mockUser.id,
+                id: mockOwner.id,
                 platform: { id: mockPlatform.id },
             })
 
@@ -69,43 +61,17 @@ describe('OAuth App API', () => {
             expect(responseBody.clientSecret).toBeUndefined()
         })
 
-        it('Fails if platform is not found', async () => {
-            // arrange
-            const nonExistentPlatformId = apId()
-
-            const testToken = await generateMockToken({
-                type: PrincipalType.USER,
-                platform: {
-                    id: nonExistentPlatformId,
-                },
-            })
-            const response = await app?.inject({
-                method: 'POST',
-                url: '/v1/oauth-apps',
-                body: upsertRequest,
-                headers: {
-                    authorization: `Bearer ${testToken}`,
-                },
-            })
-
-            // assert
-            expect(response?.statusCode).toBe(StatusCodes.FORBIDDEN)
-        })
 
         it('Fails if user is not platform owner', async () => {
             // arrange
-            const mockOwner = createMockUser()
-            await databaseConnection().getRepository('user').save([mockOwner])
+            const { mockPlatform } = await mockAndSaveBasicSetup()
 
-            const mockPlatform = createMockPlatform({ ownerId: mockOwner.id })
-            await databaseConnection().getRepository('platform').save([mockPlatform])
-
-
-            const mockUser = createMockUser({
-                platformId: mockPlatform.id,
-                platformRole: PlatformRole.MEMBER,
+            const { mockUser } = await mockBasicUser({
+                user: {
+                    platformId: mockPlatform.id,
+                    platformRole: PlatformRole.MEMBER,
+                },
             })
-            await databaseConnection().getRepository('user').save([mockUser])
 
             const testToken = await generateMockToken({
                 type: PrincipalType.USER,
@@ -130,8 +96,7 @@ describe('OAuth App API', () => {
     describe('Delete OAuth App', () => {
         it('Forbid by Non Owner', async () => {
             // arrange
-            const { mockOwner: mockUserTwo, mockPlatform: mockPlatformTwo } = await mockBasicSetup()
-
+            const { mockOwner: mockUserTwo, mockPlatform: mockPlatformTwo } = await mockAndSaveBasicSetup()
 
             const mockOAuthApp = createMockOAuthApp({
                 platformId: mockPlatformTwo.id,
@@ -162,7 +127,7 @@ describe('OAuth App API', () => {
 
         it('By Id', async () => {
             // arrange
-            const { mockOwner, mockPlatform } = await mockBasicSetup()
+            const { mockOwner, mockPlatform } = await mockAndSaveBasicSetup()
 
             const mockOAuthApp = createMockOAuthApp({
                 platformId: mockPlatform.id,
@@ -191,8 +156,7 @@ describe('OAuth App API', () => {
     describe('List OAuth Apps endpoint', () => {
         it('should list OAuth Apps by platform owner', async () => {
             // arrange
-            const { mockOwner: mockUserOne, mockPlatform: mockPlatformOne } = await mockBasicSetup()
-
+            const { mockOwner: mockUserOne, mockPlatform: mockPlatformOne } = await mockAndSaveBasicSetup()
 
             const mockOAuthAppsOne = createMockOAuthApp({
                 platformId: mockPlatformOne.id,
@@ -227,8 +191,8 @@ describe('OAuth App API', () => {
 
         it('should list OAuth Apps by platform member', async () => {
             // arrange
-            const { mockPlatform: mockPlatformTwo } = await mockBasicSetup()
-            const { mockOwner: mockUserTwo, mockPlatform: mockPlatformOne } = await mockBasicSetup()
+            const { mockPlatform: mockPlatformOne } = await mockAndSaveBasicSetup()
+            const { mockOwner: mockUserTwo, mockPlatform: mockPlatformTwo } = await mockAndSaveBasicSetup()
 
             const mockOAuthAppsOne = createMockOAuthApp({
                 platformId: mockPlatformOne.id,

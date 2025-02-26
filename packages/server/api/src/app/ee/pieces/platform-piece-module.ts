@@ -4,9 +4,7 @@ import {
     EndpointScope,
     ErrorCode,
     PieceScope,
-    Principal,
     PrincipalType,
-    ProjectMemberRole,
     SERVICE_KEY_SECURITY_OPENAPI,
 } from '@activepieces/shared'
 import {
@@ -15,10 +13,8 @@ import {
     Type,
 } from '@fastify/type-provider-typebox'
 import { StatusCodes } from 'http-status-codes'
-import { flagService } from '../../flags/flag.service'
 import { pieceService } from '../../pieces/piece-service'
 import { platformMustBeOwnedByCurrentUser } from '../authentication/ee-authorization'
-import { getPrincipalRoleOrThrow } from '../authentication/rbac/rbac-middleware'
 
 export const platformPieceModule: FastifyPluginAsyncTypebox = async (app) => {
     await app.register(platformPieceController, { prefix: '/v1/pieces' })
@@ -30,20 +26,13 @@ const platformPieceController: FastifyPluginCallbackTypebox = (
     done,
 ) => {
 
-
     app.post('/', installPieceParams, async (req, reply) => {
         const platformId = req.principal.platform.id
-        if (flagService.isCloudPlatform(platformId)) {
-            assertOneOfTheseScope(req.body.scope, [PieceScope.PROJECT])
-            await assertProjectAdminCanInstallPieceOnCloud(req.principal)
-        }
-        else {
-            assertOneOfTheseScope(req.body.scope, [PieceScope.PLATFORM])
-            await platformMustBeOwnedByCurrentUser.call(app, req, reply)
-        }
-        await pieceService.installPiece(
+        assertOneOfTheseScope(req.body.scope, [PieceScope.PLATFORM])
+        await platformMustBeOwnedByCurrentUser.call(app, req, reply)
+        await pieceService(req.log).installPiece(
             platformId,
-            req.principal.projectId,
+            undefined,
             req.body,
         )
         await reply.status(StatusCodes.CREATED).send({})
@@ -84,17 +73,3 @@ function assertOneOfTheseScope(
         })
     }
 }
-async function assertProjectAdminCanInstallPieceOnCloud(
-    principal: Principal,
-): Promise<void> {
-    const role = await getPrincipalRoleOrThrow(principal)
-    if (role !== ProjectMemberRole.ADMIN) {
-        throw new ActivepiecesError({
-            code: ErrorCode.AUTHORIZATION,
-            params: {
-                message: 'Only platform admin can install a piece',
-            },
-        })
-    }
-}
-

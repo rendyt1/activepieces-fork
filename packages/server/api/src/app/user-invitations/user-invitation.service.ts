@@ -1,11 +1,13 @@
-import { logger } from '@activepieces/server-shared'
-import { ActivepiecesError, apId, assertEqual, assertNotNullOrUndefined, ErrorCode, InvitationStatus, InvitationType, isNil, Platform, PlatformRole, ProjectMemberRole, SeekPage, spreadIfDefined, UserInvitation, UserInvitationWithLink } from '@activepieces/shared'
+import { ActivepiecesError, apId, assertEqual, assertNotNullOrUndefined, ErrorCode, InvitationStatus, InvitationType, isNil, Platform, PlatformRole, SeekPage, spreadIfDefined, User, UserIdentity, UserInvitation, UserInvitationWithLink } from '@activepieces/shared'
+import { FastifyBaseLogger } from 'fastify'
 import { IsNull } from 'typeorm'
+import { userIdentityService } from '../authentication/user-identity/user-identity-service'
 import { repoFactory } from '../core/db/repo-factory'
+import { domainHelper } from '../ee/custom-domains/domain-helper'
 import { smtpEmailSender } from '../ee/helper/email/email-sender/smtp-email-sender'
 import { emailService } from '../ee/helper/email/email-service'
-import { platformDomainHelper } from '../ee/helper/platform-domain-helper'
 import { projectMemberService } from '../ee/project-members/project-member.service'
+import { projectRoleService } from '../ee/project-role/project-role.service'
 import { jwtUtils } from '../helper/jwt-utils'
 import { buildPaginator } from '../helper/pagination/build-paginator'
 import { paginationHelper } from '../helper/pagination/pagination-utils'
@@ -15,7 +17,7 @@ import { UserInvitationEntity } from './user-invitation.entity'
 
 const repo = repoFactory(UserInvitationEntity)
 
-export const userInvitationsService = {
+export const userInvitationsService = (log: FastifyBaseLogger) => ({
     async countByProjectId(projectId: string): Promise<number> {
         return repo().countBy({
             projectId,
@@ -40,35 +42,22 @@ export const userInvitationsService = {
         }
         return invitation
     },
-    async provisionUserInvitation({ email, platformId }: ProvisionUserInvitationParams): Promise<void> {
-        const user = await userService.getByPlatformAndEmail({
-            email,
-            platformId,
-        })
-        logger.info({
-            email,
-            platformId,
-            user,
-        }, '[provisionUserInvitation]')
-        if (isNil(user)) {
+    async provisionUserInvitation({ email }: ProvisionUserInvitationParams): Promise<void> {
+        const identity = await userIdentityService(log).getIdentityByEmail(email)
+        if (isNil(identity)) {
             return
         }
-        const platform = await platformService.getOneOrThrow(platformId)
-        const invitations = await repo().findBy([
-            {
-                email,
-                platformId,
+        const invitations = await repo().createQueryBuilder('user_invitation')
+            .where('LOWER("user_invitation"."email") = :email', { email: email.toLowerCase().trim() })
+            .andWhere({
                 status: InvitationStatus.ACCEPTED,
-            },
-        ])
-        logger.info({
-            platformId,
-            count: invitations.length,
-        }, '[provisionUserInvitation]')
+            })
+            .getMany()
+
+        log.info({ count: invitations.length }, '[provisionUserInvitation] list invitations')
         for (const invitation of invitations) {
-            logger.info({
-                invitation,
-            }, '[provisionUserInvitation] provision')
+            log.info({ invitation }, '[provisionUserInvitation] provision')
+            const user = await getOrCreateUser(identity, invitation.platformId)
             switch (invitation.type) {
                 case InvitationType.PLATFORM: {
                     assertNotNullOrUndefined(invitation.platformRole, 'platformRole')
@@ -80,14 +69,20 @@ export const userInvitationsService = {
                     break
                 }
                 case InvitationType.PROJECT: {
-                    const { projectId, projectRole } = invitation
+                    const { projectId, projectRoleId } = invitation
                     assertNotNullOrUndefined(projectId, 'projectId')
-                    assertNotNullOrUndefined(projectRole, 'projectRole')
+                    assertNotNullOrUndefined(projectRoleId, 'projectRoleId')
+                    const platform = await platformService.getOneOrThrow(invitation.platformId)
                     assertEqual(platform.projectRolesEnabled, true, 'Project roles are not enabled', 'PROJECT_ROLES_NOT_ENABLED')
-                    await projectMemberService.upsert({
+
+                    const projectRole = await projectRoleService.getOneOrThrowById({
+                        id: projectRoleId,
+                    })
+
+                    await projectMemberService(log).upsert({
                         projectId,
                         userId: user.id,
-                        role: projectRole,
+                        projectRoleName: projectRole.name,
                     })
                     break
                 }
@@ -102,7 +97,7 @@ export const userInvitationsService = {
         platformId,
         projectId,
         type,
-        projectRole,
+        projectRoleId,
         platformRole,
         invitationExpirySeconds,
         status,
@@ -113,9 +108,9 @@ export const userInvitationsService = {
             id,
             status,
             type,
-            email,
+            email: email.toLowerCase().trim(),
             platformId,
-            projectRole: type === InvitationType.PLATFORM ? undefined : projectRole!,
+            projectRoleId: type === InvitationType.PLATFORM ? undefined : projectRoleId!,
             platformRole: type === InvitationType.PROJECT ? undefined : platformRole!,
             projectId: type === InvitationType.PLATFORM ? undefined : projectId!,
         }, ['email', 'platformId', 'projectId'])
@@ -131,7 +126,7 @@ export const userInvitationsService = {
             })
             return userInvitation
         }
-        return enrichWithInvitationLink(platform, userInvitation, invitationExpirySeconds)
+        return enrichWithInvitationLink(platform, userInvitation, invitationExpirySeconds, log)
     },
     async list(params: ListUserParams): Promise<SeekPage<UserInvitation>> {
         const decodedCursor = paginationHelper.decodeCursor(params.cursor ?? null)
@@ -144,14 +139,23 @@ export const userInvitationsService = {
                 beforeCursor: decodedCursor.previousCursor,
             },
         })
-        const queryBuilder = repo().createQueryBuilder('user_invitation').where({
-            platformId: params.platformId,
-            ...spreadIfDefined('projectId', params.projectId),
-            ...spreadIfDefined('status', params.status),
-            ...spreadIfDefined('type', params.type),
-        })
+        const queryBuilder = repo().createQueryBuilder('user_invitation')
+            .where({
+                platformId: params.platformId,
+                ...spreadIfDefined('projectId', params.projectId),
+                ...spreadIfDefined('status', params.status),
+                ...spreadIfDefined('type', params.type),
+            })
         const { data, cursor } = await paginator.paginate(queryBuilder)
-        return paginationHelper.createPage<UserInvitation>(data, cursor)
+        const enrichedData = await Promise.all(data.map(async (invitation) => {
+            return {
+                projectRole: !isNil(invitation.projectRoleId) ? await projectRoleService.getOneOrThrowById({
+                    id: invitation.projectRoleId,
+                }) : null,
+                ...invitation,
+            }
+        }))
+        return paginationHelper.createPage<UserInvitation>(await Promise.all(enrichedData), cursor)
     },
     async delete({ id, platformId }: PlatformAndIdParams): Promise<void> {
         const invitation = await this.getOneOrThrow({ id, platformId })
@@ -161,9 +165,11 @@ export const userInvitationsService = {
         })
     },
     async getOneOrThrow({ id, platformId }: PlatformAndIdParams): Promise<UserInvitation> {
-        const invitation = await repo().findOneBy({
-            id,
-            platformId,
+        const invitation = await repo().findOne({
+            where: {
+                id,
+                platformId,
+            },
         })
         if (isNil(invitation)) {
             throw new ActivepiecesError({
@@ -181,27 +187,28 @@ export const userInvitationsService = {
         await repo().update(invitation.id, {
             status: InvitationStatus.ACCEPTED,
         })
-        await userInvitationsService.provisionUserInvitation({
+        const identity = await userIdentityService(log).getIdentityByEmail(invitation.email)
+        if (isNil(identity)) {
+            return {
+                registered: false,
+            }
+        }
+        await this.provisionUserInvitation({
             email: invitation.email,
-            platformId: invitation.platformId,
-        })
-        const user = await userService.getByPlatformAndEmail({
-            email: invitation.email,
-            platformId: invitation.platformId,
         })
         return {
-            registered: !isNil(user),
+            registered: true,
         }
     },
     async hasAnyAcceptedInvitations({
         email,
         platformId,
-    }: ProvisionUserInvitationParams): Promise<boolean> {
-        const invitations = await repo().findBy({
-            email,
+    }: HasAnyAcceptedInvitationsParams): Promise<boolean> {
+        const invitations = await repo().createQueryBuilder().where({
             platformId,
             status: InvitationStatus.ACCEPTED,
-        })
+        }).andWhere('LOWER(user_invitation.email) = :email', { email: email.toLowerCase().trim() })
+            .getMany()
         return invitations.length > 0
     },
     async getByEmailAndPlatformIdOrThrow({
@@ -215,9 +222,23 @@ export const userInvitationsService = {
             projectId: isNil(projectId) ? IsNull() : projectId,
         })
     },
+})
+
+
+async function getOrCreateUser(identity: UserIdentity, platformId: string): Promise<User> {
+    const user = await userService.getOneByIdentityAndPlatform({
+        identityId: identity.id,
+        platformId,
+    })
+    if (isNil(user)) {
+        return userService.create({
+            identityId: identity.id,
+            platformId,
+            platformRole: PlatformRole.MEMBER,
+        })
+    }
+    return user
 }
-
-
 async function generateInvitationLink(userInvitation: UserInvitation, expireyInSeconds: number): Promise<string> {
     const token = await jwtUtils.sign({
         payload: {
@@ -227,20 +248,20 @@ async function generateInvitationLink(userInvitation: UserInvitation, expireyInS
         key: await jwtUtils.getJwtSecret(),
     })
 
-    return platformDomainHelper.constructUrlFrom({
+    return domainHelper.getPublicUrl({
         platformId: userInvitation.platformId,
         path: `invitation?token=${token}&email=${encodeURIComponent(userInvitation.email)}`,
     })
 }
-const enrichWithInvitationLink = async (platform: Platform, userInvitation: UserInvitation, expireyInSeconds: number) => {
+const enrichWithInvitationLink = async (platform: Platform, userInvitation: UserInvitation, expireyInSeconds: number, log: FastifyBaseLogger) => {
     const invitationLink = await generateInvitationLink(userInvitation, expireyInSeconds)
-    if (!smtpEmailSender.isSmtpConfigured(platform)) {
+    if (!smtpEmailSender(log).isSmtpConfigured(platform)) {
         return {
             ...userInvitation,
             link: invitationLink,
         }
     }
-    await emailService.sendInvitation({
+    await emailService(log).sendInvitation({
         userInvitation,
         invitationLink,
     })
@@ -255,9 +276,12 @@ type ListUserParams = {
     cursor: string | null
 }
 
-type ProvisionUserInvitationParams = {
+type HasAnyAcceptedInvitationsParams = {
     email: string
     platformId: string
+}
+type ProvisionUserInvitationParams = {
+    email: string
 }
 
 type PlatformAndIdParams = {
@@ -280,7 +304,7 @@ type CreateParams = {
     projectId: string | null
     status: InvitationStatus
     type: InvitationType
-    projectRole: ProjectMemberRole | null
+    projectRoleId: string | null
     invitationExpirySeconds: number
 }
 

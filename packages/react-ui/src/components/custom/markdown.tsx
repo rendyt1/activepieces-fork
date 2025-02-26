@@ -1,8 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
 import { t } from 'i18next';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Info, AlertTriangle, Lightbulb } from 'lucide-react';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import gfm from 'remark-gfm';
+
+import { cn } from '@/lib/utils';
+import { MarkdownVariant } from '@activepieces/shared';
 
 import { Alert, AlertDescription } from '../ui/alert';
 import { Button } from '../ui/button';
@@ -18,27 +22,48 @@ function applyVariables(markdown: string, variables: Record<string, string>) {
 type MarkdownProps = {
   markdown: string | undefined;
   variables?: Record<string, string>;
-  className?: string;
-  withBorder?: boolean;
+  variant?: MarkdownVariant;
 };
 
 const Container = ({
-  withBorder,
+  variant,
   children,
 }: {
-  withBorder: boolean;
+  variant?: MarkdownVariant;
   children: React.ReactNode;
-}) =>
-  withBorder ? (
-    <Alert className="rounded">
-      <AlertDescription>{children}</AlertDescription>
+}) => {
+  return (
+    <Alert
+      className={cn('rounded-md border', {
+        'bg-warning-100 text-warning-300 border-none':
+          variant === MarkdownVariant.WARNING,
+        'bg-success-100 text-success-300 border-none':
+          variant === MarkdownVariant.TIP,
+        'p-0 bg-background border-none': variant === MarkdownVariant.BORDERLESS,
+      })}
+    >
+      {variant !== MarkdownVariant.BORDERLESS && (
+        <>
+          {(variant === MarkdownVariant.INFO || variant === undefined) && (
+            <Info className="w-4 h-4 mt-1" />
+          )}
+          {variant === MarkdownVariant.WARNING && (
+            <AlertTriangle className="w-4 h-4 mt-1" />
+          )}
+          {variant === MarkdownVariant.TIP && (
+            <Lightbulb className="w-4 h-4 mt-1" />
+          )}
+        </>
+      )}
+      <AlertDescription className="flex-grow w-full">
+        {children}
+      </AlertDescription>
     </Alert>
-  ) : (
-    children
   );
+};
 
 const ApMarkdown = React.memo(
-  ({ markdown, variables, withBorder = true }: MarkdownProps) => {
+  ({ markdown, variables, variant }: MarkdownProps) => {
     const [copiedText, setCopiedText] = useState<string | null>(null);
     const { toast } = useToast();
 
@@ -65,8 +90,10 @@ const ApMarkdown = React.memo(
       .map((line) => line.trim())
       .join('\n');
     return (
-      <Container withBorder={withBorder}>
+      <Container variant={variant}>
         <ReactMarkdown
+          className="flex-grow w-full"
+          remarkPlugins={[gfm]}
           components={{
             code(props) {
               const isLanguageText = props.className?.includes('language-text');
@@ -76,10 +103,10 @@ const ApMarkdown = React.memo(
               const codeContent = String(props.children).trim();
               const isCopying = codeContent === copiedText;
               return (
-                <div className="relative  w-full items-center flex bg-background border border-solid text-sm rounded block w-full gap-1 p-1.5">
+                <div className="relative w-full items-center flex bg-background border border-solid text-sm rounded block w-full gap-1 p-1.5">
                   <input
                     type="text"
-                    className=" grow bg-background "
+                    className="grow bg-background"
                     value={codeContent}
                     disabled
                   />
@@ -131,6 +158,8 @@ const ApMarkdown = React.memo(
             a: ({ node, ...props }) => (
               <a
                 className="font-medium text-primary underline underline-offset-4"
+                target="_blank"
+                rel="noreferrer noopener"
                 {...props}
               />
             ),

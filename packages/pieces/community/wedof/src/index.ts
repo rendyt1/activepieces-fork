@@ -55,6 +55,8 @@ import { certificationFolderSurveySixMonthExperienceAnswered } from './lib/trigg
 import { certificationFolderSurveySixMonthExperienceAvailable } from './lib/triggers/certification-folder-survey/certification-folder-survey-six-month-experience-available';
 import { getCertificationFolderSurvey } from './lib/actions/certification-folder-survey/get-certification-folder-survey';
 import { listCertificationFolderSurveys } from './lib/actions/certification-folder-survey/list-certification-folder-surveys';
+import { createCertificationPartnerAudit } from './lib/actions/certification-partner-audit/create-certification-partner-audit';
+import { createGeneralAudit } from './lib/actions/certification-partner-audit/create-general-audit';
 
 export const wedofAuth = PieceAuth.SecretText({
     displayName: 'Clé API',
@@ -85,7 +87,7 @@ export const wedof = createPiece({
   auth: wedofAuth,
   description:
     'Automatisez la gestion de vos dossiers de formations (CPF, EDOF, Kairos, AIF, OPCO et autres)',
-  minimumSupportedRelease: '0.20.0',
+  minimumSupportedRelease: '0.30.0',
   logoUrl: 'https://cdn.activepieces.com/pieces/wedof.svg',
   categories: [
     PieceCategory.SALES_AND_CRM,
@@ -127,7 +129,10 @@ export const wedof = createPiece({
     sendFile,
     ///////////// certificationFoldersSurvey ///////
     getCertificationFolderSurvey,
-    listCertificationFolderSurveys
+    listCertificationFolderSurveys,
+    ///////////// certificationPartnerAudit ////////
+    createCertificationPartnerAudit,
+    createGeneralAudit
   ],
   triggers: [
     ////////////// registrationFolders ////////////

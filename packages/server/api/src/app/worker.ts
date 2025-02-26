@@ -1,34 +1,31 @@
-import { logger, system, WorkerSystemProps } from '@activepieces/server-shared'
-import { isNil, WorkerMachineType } from '@activepieces/shared'
+import { AppSystemProp, PiecesSource, WorkerSystemProp } from '@activepieces/server-shared'
+import { isNil } from '@activepieces/shared'
 import { FastifyInstance } from 'fastify'
-import { flowWorker } from 'server-worker'
+import { flowWorker, piecesBuilder } from 'server-worker'
 import { accessTokenManager } from './authentication/lib/access-token-manager'
-import { piecesBuilder } from './pieces/piece-metadata-service/pieces-builder'
-
+import { system } from './helper/system/system'
 
 export const setupWorker = async (app: FastifyInstance): Promise<void> => {
 
-    const workerToken = await generateWorkerToken()
-    await flowWorker.init(workerToken)
+    const piecesSource = system.getOrThrow<PiecesSource>(AppSystemProp.PIECES_SOURCE)
+    const devPieces = system.get(AppSystemProp.DEV_PIECES)?.split(',') ?? []
+    await piecesBuilder(app, app.io, devPieces, piecesSource)
     app.addHook('onClose', async () => {
-        await flowWorker.close()
+        await flowWorker(app.log).close()
     })
-    await piecesBuilder(app.io)
 }
-export async function workerPostBoot(): Promise<void> {
-    logger.info('Worker started')
-    await flowWorker.start()
+
+export async function workerPostBoot(app: FastifyInstance): Promise<void> {
+    const workerToken = await generateWorkerToken()
+    await flowWorker(app.log).init({ workerToken })
 }
 
 
 
 async function generateWorkerToken(): Promise<string> {
-    const workerToken = system.get(WorkerSystemProps.WORKER_TOKEN)
+    const workerToken = system.get(WorkerSystemProp.WORKER_TOKEN)
     if (!isNil(workerToken)) {
         return workerToken
     }
-    return accessTokenManager.generateWorkerToken({
-        type: WorkerMachineType.SHARED,
-        platformId: null,
-    })
+    return accessTokenManager.generateWorkerToken()
 }

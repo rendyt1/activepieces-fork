@@ -10,9 +10,9 @@ import {
 
 import {
   ActionType,
-  flowHelper,
   FlowRun,
   FlowRunStatus,
+  flowStructureUtil,
   FlowVersion,
   isNil,
   LoopOnItemsAction,
@@ -88,6 +88,11 @@ export const flowRunUtils = {
           variant: 'default',
           Icon: PauseIcon,
         };
+      case FlowRunStatus.MEMORY_LIMIT_EXCEEDED:
+        return {
+          variant: 'error',
+          Icon: X,
+        };
       case FlowRunStatus.QUOTA_EXCEEDED:
         return {
           variant: 'error',
@@ -112,7 +117,7 @@ function findLoopsState(
   run: FlowRun,
   currentLoopsState: Record<string, number>,
 ) {
-  const loops = flowHelper
+  const loops = flowStructureUtil
     .getAllSteps(flowVersion.trigger)
     .filter((s) => s.type === ActionType.LOOP_ON_ITEMS);
   const failedStep = run.steps ? findFailedStepInOutput(run.steps) : null;
@@ -121,7 +126,7 @@ function findLoopsState(
     (res, step) => ({
       ...res,
       [step.name]:
-        failedStep && flowHelper.isChildOf(step, failedStep)
+        failedStep && flowStructureUtil.isChildOf(step, failedStep)
           ? Number.MAX_SAFE_INTEGER
           : currentLoopsState[step.name] ?? 0,
     }),
@@ -196,15 +201,12 @@ function extractStepOutput(
   if (stepOutput) {
     return stepOutput;
   }
-  const parents: LoopOnItemsAction[] = flowHelper
-    .findPathToStep({
-      targetStepName: stepName,
-      trigger: trigger,
-    })
+  const parents: LoopOnItemsAction[] = flowStructureUtil
+    .findPathToStep(trigger, stepName)
     .filter(
       (p) =>
         p.type === ActionType.LOOP_ON_ITEMS &&
-        flowHelper.isChildOf(p, stepName),
+        flowStructureUtil.isChildOf(p, stepName),
     ) as LoopOnItemsAction[];
 
   if (parents.length > 0) {

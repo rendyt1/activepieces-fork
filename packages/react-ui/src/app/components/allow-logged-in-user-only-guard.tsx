@@ -1,11 +1,9 @@
 import dayjs from 'dayjs';
 import { jwtDecode } from 'jwt-decode';
-import { Suspense } from 'react';
 import { Navigate } from 'react-router-dom';
 
 import { SocketProvider } from '@/components/socket-provider';
 import { useTelemetry } from '@/components/telemetry-provider';
-import { LoadingSpinner } from '@/components/ui/spinner';
 import { flagsHooks } from '@/hooks/flags-hooks';
 import { platformHooks } from '@/hooks/platform-hooks';
 import { projectHooks } from '@/hooks/project-hooks';
@@ -44,18 +42,8 @@ export const AllowOnlyLoggedInUserOnlyGuard = ({
     reset();
     return <Navigate to="/sign-in" replace />;
   }
-  projectHooks.prefetchProject();
-  platformHooks.prefetchPlatform();
+  platformHooks.useCurrentPlatform();
   flagsHooks.useFlags();
-  return (
-    <Suspense
-      fallback={
-        <div className=" flex h-screen w-screen items-center justify-center ">
-          <LoadingSpinner size={50}></LoadingSpinner>
-        </div>
-      }
-    >
-      <SocketProvider>{children}</SocketProvider>
-    </Suspense>
-  );
+  projectHooks.useCurrentProject();
+  return <SocketProvider>{children}</SocketProvider>;
 };

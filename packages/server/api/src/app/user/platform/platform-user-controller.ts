@@ -5,7 +5,7 @@ import {
     PrincipalType,
     SeekPage,
     UpdateUserRequestBody,
-    UserResponse,
+    UserWithMetaInformation,
 } from '@activepieces/shared'
 import {
     FastifyPluginAsyncTypebox,
@@ -15,7 +15,6 @@ import { StatusCodes } from 'http-status-codes'
 import { userService } from '../user-service'
 
 export const platformUserController: FastifyPluginAsyncTypebox = async (app) => {
-
 
     app.get('/', ListUsersRequest, async (req) => {
         const platformId = req.principal.platform.id
@@ -35,6 +34,7 @@ export const platformUserController: FastifyPluginAsyncTypebox = async (app) => 
             platformId,
             platformRole: req.body.platformRole,
             status: req.body.status,
+            externalId: req.body.externalId,
         })
     })
 
@@ -54,8 +54,11 @@ export const platformUserController: FastifyPluginAsyncTypebox = async (app) => 
 const ListUsersRequest = {
     schema: {
         response: {
-            [StatusCodes.OK]: SeekPage(UserResponse),
+            [StatusCodes.OK]: SeekPage(UserWithMetaInformation),
         },
+    },
+    response: {
+        [StatusCodes.OK]: SeekPage(UserWithMetaInformation),
     },
     config: {
         allowedPrincipals: [PrincipalType.USER, PrincipalType.SERVICE],
@@ -70,7 +73,7 @@ const UpdateUserRequest = {
         }),
         body: UpdateUserRequestBody,
         response: {
-            [StatusCodes.OK]: UserResponse,
+            [StatusCodes.OK]: UserWithMetaInformation,
         },
     },
     config: {

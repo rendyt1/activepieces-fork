@@ -4,10 +4,12 @@ import {
   slackChannel,
   username,
   blocks,
-  slackInfo,
+  singleSelectChannelInfo,
 } from '../common/props';
 import { processMessageTimestamp, slackSendMessage } from '../common/utils';
 import { slackAuth } from '../../';
+import { Block,KnownBlock } from '@slack/web-api';
+
 
 export const slackSendMessageAction = createAction({
   auth: slackAuth,
@@ -15,7 +17,7 @@ export const slackSendMessageAction = createAction({
   displayName: 'Send Message To A Channel',
   description: 'Send message to a channel',
   props: {
-    info: slackInfo,
+    info: singleSelectChannelInfo,
     channel: slackChannel(true),
     text: Property.LongText({
       displayName: 'Message',
@@ -38,8 +40,10 @@ export const slackSendMessageAction = createAction({
   },
   async run(context) {
     const token = context.auth.access_token;
-    const { text, channel, username, profilePicture, threadTs, file, blocks } =
+    const { text, channel, username, profilePicture, threadTs, file,blocks } =
       context.propsValue;
+    
+    const blockList = blocks ?[{ type: 'section', text: { type: 'mrkdwn', text } }, ...(blocks as unknown as (KnownBlock | Block)[])] :undefined
 
     return slackSendMessage({
       token,
@@ -49,7 +53,7 @@ export const slackSendMessageAction = createAction({
       conversationId: channel,
       threadTs: threadTs ? processMessageTimestamp(threadTs) : undefined,
       file,
-      blocks,
+      blocks: blockList,
     });
   },
 });

@@ -3,8 +3,7 @@ import { Property } from '@activepieces/pieces-framework';
 export const wedofCommon = {
    baseUrl: 'https://www.wedof.fr/api',
   host: 'https://www.wedof.fr/api',
- 
-
+  
   state: Property.StaticMultiSelectDropdown({
     displayName: 'Etat du dossier de formation',
     required: false,
@@ -294,7 +293,7 @@ export const wedofCommon = {
   europeanLanguageLevel: Property.StaticDropdown({
     displayName: 'Nomenclature européeenne pour les certifications de langues',
     required: false,
-    defaultValue: false,
+    defaultValue: null,
     options: {
       options: [
         {label: "C2", value: "C2"},
@@ -312,7 +311,7 @@ export const wedofCommon = {
   gradePass: Property.StaticDropdown({
     displayName: 'Ajoute une mention au dossier de certification',
     required: false,
-    defaultValue: false,
+    defaultValue: null,
     options: {
       options: [
         {label: "SANS MENTION", value: "SANS_MENTION"},
@@ -328,7 +327,7 @@ export const wedofCommon = {
   examinationType: Property.StaticDropdown({
     displayName: "Type de passage de l'examen",
     required: false,
-    defaultValue: false,
+    defaultValue: null,
     options: {
       options: [
         {

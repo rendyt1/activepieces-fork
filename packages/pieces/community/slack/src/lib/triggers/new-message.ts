@@ -1,7 +1,13 @@
-import { TriggerStrategy, createTrigger } from '@activepieces/pieces-framework';
-import { slackChannel, slackInfo } from '../common/props';
+import {
+  Property,
+  TriggerStrategy,
+  createTrigger,
+} from '@activepieces/pieces-framework';
+import { singleSelectChannelInfo, slackChannel } from '../common/props';
 import { slackAuth } from '../../';
 import { WebClient } from '@slack/web-api';
+import { isNil } from '@activepieces/shared';
+import { getFirstFiveOrAll } from '../common/utils';
 
 const sampleData = {
   client_msg_id: '2767cf34-0651-44e0-b9c8-1b167ce9b7a9',
@@ -38,8 +44,13 @@ export const newMessage = createTrigger({
   displayName: 'New Message',
   description: 'Triggers when a new message is received',
   props: {
-    info: slackInfo,
+    info: singleSelectChannelInfo,
     channel: slackChannel(false),
+    ignoreBots: Property.Checkbox({
+      displayName: 'Ignore Bot Messages ?',
+      required: true,
+      defaultValue: false,
+    }),
   },
   type: TriggerStrategy.APP_WEBHOOK,
   sampleData: sampleData,
@@ -63,19 +74,23 @@ export const newMessage = createTrigger({
     const client = new WebClient(context.auth.access_token);
     const response = await client.conversations.history({
       channel: context.propsValue.channel,
-      limit: 10,
+      limit: 100,
     });
     if (!response.messages) {
       return [];
     }
-    return response.messages.map((message) => {
-      return {
-        ...message,
-        channel: context.propsValue.channel,
-        event_ts: '1678231735.586539',
-        channel_type: 'channel',
-      };
-    });
+    const messages = response.messages
+			.filter((message) => !isNil(message.ts))
+      .filter((message) => !(context.propsValue.ignoreBots && message.bot_id))
+      .map((message) => {
+        return {
+          ...message,
+          channel: context.propsValue.channel,
+          event_ts: '1678231735.586539',
+          channel_type: 'channel',
+        };
+      }).sort((a, b) => parseFloat(b.ts!) - parseFloat(a.ts!))
+      return getFirstFiveOrAll(messages);
   },
 
   run: async (context) => {
@@ -84,6 +99,10 @@ export const newMessage = createTrigger({
       !context.propsValue.channel ||
       payloadBody.event.channel === context.propsValue.channel
     ) {
+      // check for bot messages
+      if (context.propsValue.ignoreBots && payloadBody.event.bot_id) {
+        return [];
+      }
       return [payloadBody.event];
     }
 
@@ -94,5 +113,6 @@ export const newMessage = createTrigger({
 type PayloadBody = {
   event: {
     channel: string;
+    bot_id?: string;
   };
 };

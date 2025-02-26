@@ -1,4 +1,6 @@
+import { exceptionHandler } from '@activepieces/server-shared'
 import { WebsocketServerEvent } from '@activepieces/shared'
+import { FastifyBaseLogger } from 'fastify'
 import { Socket } from 'socket.io'
 import { accessTokenManager } from '../authentication/lib/access-token-manager'
 
@@ -8,11 +10,18 @@ export type WebsocketListener<T> = (socket: Socket) => (data: T) => Promise<void
 const listener: Record<string, WebsocketListener<any>> = {}
 
 export const websocketService = {
-    async init(socket: Socket): Promise<void> {
-        const principal = await accessTokenManager.extractPrincipal(socket.handshake.auth.token)
+    async init(socket: Socket, log: FastifyBaseLogger): Promise<void> {
+        const principal = await accessTokenManager.verifyPrincipal(socket.handshake.auth.token)
         await socket.join(principal.projectId)
         for (const [event, handler] of Object.entries(listener)) {
-            socket.on(event, handler(socket))
+            socket.on(event, async (data) => {
+                try {
+                    await handler(socket)(data)
+                }
+                catch (error) {
+                    exceptionHandler.handle(error, log)
+                }
+            })
         }
     },
     addListener<T>(event: WebsocketServerEvent, handler: WebsocketListener<T>): void {

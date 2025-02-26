@@ -4,6 +4,7 @@ import {
 } from '@activepieces/shared'
 import { FastifyInstance } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
+import { initializeDatabase } from '../../../../src/app/database'
 import { databaseConnection } from '../../../../src/app/database/database-connection'
 import { setupServer } from '../../../../src/app/server'
 import { generateMockToken } from '../../../helpers/auth'
@@ -11,13 +12,13 @@ import {
     createMockFlow,
     createMockFlowVersion,
     createMockProject,
-    mockBasicSetup,
+    mockAndSaveBasicSetup,
 } from '../../../helpers/mocks'
 
 let app: FastifyInstance | null = null
 
 beforeAll(async () => {
-    await databaseConnection().initialize()
+    await initializeDatabase({ runMigrations: false })  
     app = await setupServer()
 })
 
@@ -30,7 +31,7 @@ describe('Flow API for Worker', () => {
     describe('Get Flow from Worker', () => {
         it('List other flow for another project', async () => {
             // arrange
-            const { mockPlatform, mockOwner, mockProject } = await mockBasicSetup()
+            const { mockPlatform, mockOwner, mockProject } = await mockAndSaveBasicSetup()
 
             const mockProject2 = createMockProject({
                 platformId: mockPlatform.id,

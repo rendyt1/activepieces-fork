@@ -90,9 +90,6 @@ const OAuth2ConnectionSettings = ({
     platform.cloudAuthEnabled,
     edition!,
   );
-  const { data: ownAuthEnabled } = flagsHooks.useFlag<ApEdition>(
-    ApFlagId.OWN_AUTH2_ENABLED,
-  );
 
   const redirectUrl =
     currentOAuth2Type === AppConnectionType.CLOUD_OAUTH2
@@ -165,9 +162,21 @@ const OAuth2ConnectionSettings = ({
     const clientSecret = (form.getValues().request as UpsertOAuth2Request)
       ?.value?.client_secret;
     const hasClientSecret = !isNil(clientSecret);
+    const propsValues = form.getValues('request.value.props') ?? {};
+    const arePropsValid = authProperty.props
+      ? Object.keys(authProperty.props).reduce((acc, key) => {
+          return (
+            acc &&
+            ((!isNil(propsValues[key]) && propsValues[key] !== '') ||
+              !authProperty.props?.[key]?.required)
+          );
+        }, true)
+      : true;
+
     setReadyToConnect(
       baseCriteria &&
-        (currentOAuth2Type !== AppConnectionType.OAUTH2 || hasClientSecret),
+        (currentOAuth2Type !== AppConnectionType.OAUTH2 || hasClientSecret) &&
+        arePropsValid,
     );
   }, [watchedForm]);
 
@@ -304,8 +313,7 @@ const OAuth2ConnectionSettings = ({
           </div>
         )}
 
-        {ownAuthEnabled &&
-          isNil(reconnectConnection) &&
+        {isNil(reconnectConnection) &&
           currentOAuth2Type !== AppConnectionType.OAUTH2 && (
             <div>
               <Button

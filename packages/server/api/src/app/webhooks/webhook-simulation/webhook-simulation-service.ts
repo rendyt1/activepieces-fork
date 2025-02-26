@@ -1,4 +1,4 @@
-import { ApLock, logger } from '@activepieces/server-shared'
+import { ApLock } from '@activepieces/server-shared'
 import {
     ActivepiecesError,
     apId,
@@ -6,7 +6,10 @@ import {
     FlowId,
     FlowVersionId,
     isNil,
-    ProjectId, WebhookSimulation } from '@activepieces/shared'
+    ProjectId,
+    WebhookSimulation,
+} from '@activepieces/shared'
+import { FastifyBaseLogger } from 'fastify'
 import { repoFactory } from '../../core/db/repo-factory'
 import { distributedLock } from '../../helper/lock'
 import { WebhookSimulationEntity } from './webhook-simulation-entity'
@@ -27,25 +30,25 @@ type CreateParams = BaseParams
 
 type AcquireLockParams = {
     flowId: FlowId
+    log: FastifyBaseLogger
 }
 
-const createLock = async ({ flowId }: AcquireLockParams): Promise<ApLock> => {
+const createLock = async ({ flowId, log }: AcquireLockParams): Promise<ApLock> => {
     const key = `${flowId}-webhook-simulation`
-    return distributedLock.acquireLock({ key, timeout: 5000 })
+    return distributedLock.acquireLock({ key, timeout: 5000, log })
 }
 
-const webhookSimulationRepo = repoFactory(
-    WebhookSimulationEntity,
-)
+const webhookSimulationRepo = repoFactory(WebhookSimulationEntity)
 
-export const webhookSimulationService = {
+export const webhookSimulationService = (log: FastifyBaseLogger) => ({
     async create(params: CreateParams): Promise<WebhookSimulation> {
-        logger.debug(params, '[WebhookSimulationService#deleteByFlowId] params')
+        log.debug(params, '[WebhookSimulationService#deleteByFlowId] params')
 
         const { flowId, flowVersionId, projectId } = params
 
         const lock = await createLock({
             flowId,
+            log,
         })
 
         try {
@@ -68,7 +71,7 @@ export const webhookSimulationService = {
             ...params,
         }
 
-            await webhookSideEffects.preCreate({
+            await webhookSideEffects(log).preCreate({
                 flowId,
                 projectId,
             })
@@ -79,8 +82,14 @@ export const webhookSimulationService = {
             await lock.release()
         }
     },
+    async exists(flowId: FlowId): Promise<boolean> {
+        const webhookSimulation = await webhookSimulationRepo().findOneBy({
+            flowId,
+        })
+        return !isNil(webhookSimulation)
+    },
     async get(params: GetParams): Promise<WebhookSimulation | null> {
-        logger.debug(params, '[WebhookSimulationService#getByFlowId] params')
+        log.debug(params, '[WebhookSimulationService#getByFlowId] params')
 
         const { flowId, projectId } = params
 
@@ -92,9 +101,9 @@ export const webhookSimulationService = {
     async getOrThrow(params: GetParams): Promise<WebhookSimulation> {
         const webhookSimulation = await this.get(params)
         const { flowId, projectId } = params
-        
+
         if (isNil(webhookSimulation)) {
-            logger.debug('[WebhookSimulationService#getByFlowId] not found')
+            log.debug('[WebhookSimulationService#getByFlowId] not found')
             throw new ActivepiecesError({
                 code: ErrorCode.ENTITY_NOT_FOUND,
                 params: {
@@ -104,9 +113,9 @@ export const webhookSimulationService = {
         }
         return webhookSimulation
     },
-
+    
     async delete(params: DeleteParams): Promise<void> {
-        logger.debug(params, '[WebhookSimulationService#deleteByFlowId] params')
+        log.debug(params, '[WebhookSimulationService#deleteByFlowId] params')
 
         const { flowId, flowVersionId, projectId, parentLock } = params
 
@@ -115,6 +124,7 @@ export const webhookSimulationService = {
         if (isNil(parentLock)) {
             lock = await createLock({
                 flowId,
+                log,
             })
         }
 
@@ -126,7 +136,7 @@ export const webhookSimulationService = {
             if (isNil(webhookSimulation)) {
                 return
             }
-            await webhookSideEffects.preDelete({
+            await webhookSideEffects(log).preDelete({
                 flowId,
                 projectId,
                 flowVersionId,
@@ -140,4 +150,4 @@ export const webhookSimulationService = {
             }
         }
     },
-}
+})

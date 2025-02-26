@@ -6,13 +6,14 @@ import {
     PieceTrigger,
     ProjectId,
 } from '@activepieces/shared'
+import { FastifyBaseLogger } from 'fastify'
 import { pieceMetadataService } from '../../../pieces/piece-metadata-service'
+import { projectService } from '../../../project/project-service'
 
-
-export const triggerUtils = {
+export const triggerUtils = (log: FastifyBaseLogger) => ({
     async getPieceTriggerOrThrow({ trigger, projectId }: GetPieceTriggerOrThrowParams): Promise<TriggerBase> {
 
-        const pieceTrigger = await triggerUtils.getPieceTrigger({
+        const pieceTrigger = await this.getPieceTrigger({
             trigger,
             projectId,
 
@@ -30,8 +31,10 @@ export const triggerUtils = {
         return pieceTrigger
     },
     async getPieceTrigger({ trigger, projectId }: GetPieceTriggerOrThrowParams): Promise<TriggerBase | null> {
-        const piece = await pieceMetadataService.get({
+        const platformId = await projectService.getPlatformId(projectId)
+        const piece = await pieceMetadataService(log).get({
             projectId,
+            platformId,
             name: trigger.settings.pieceName,
             version: trigger.settings.pieceVersion,
         })
@@ -41,7 +44,7 @@ export const triggerUtils = {
         const pieceTrigger = piece.triggers[trigger.settings.triggerName]
         return pieceTrigger
     },
-}
+})
 
 type GetPieceTriggerOrThrowParams = {
     trigger: PieceTrigger

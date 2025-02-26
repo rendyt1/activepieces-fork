@@ -1,4 +1,4 @@
-import deepmerge from 'deepmerge'
+import { deepmerge } from 'deepmerge-ts'
 
 export function isString(str: unknown): str is string {
     return str != null && typeof str === 'string'
@@ -6,6 +6,24 @@ export function isString(str: unknown): str is string {
 
 export function isNil<T>(value: T | null | undefined): value is null | undefined {
     return value === null || value === undefined
+}
+
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function setAtPath<T, K extends keyof any>(obj: T, path: K | K[], value: any): void {
+    const pathArray = Array.isArray(path) ? path : (path as string).match(/([^[.\]])+/g) as unknown as K[]
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    pathArray.reduce((acc: any, key: K, i: number) => {
+        if (acc[key] === undefined) acc[key] = {}
+        if (i === pathArray.length - 1) acc[key] = value
+        return acc[key]
+    }, obj)
+}
+
+
+export function insertAt<T>(array: T[], index: number, item: T): T[] {
+    return [...array.slice(0, index), item, ...array.slice(index)]
 }
 
 export function debounce<T>(func: (...args: T[]) => void, wait: number): (...args: T[]) => void {
@@ -27,6 +45,9 @@ type DeepPartial<T> = {
     [P in keyof T]?: T[P] extends Record<string, unknown> ? DeepPartial<T[P]> : T[P];
 }
 
+/**
+ * This function also merges arrays, x = [1, 2], y = [3, 4], z = deepMergeAndCast(x, y) -> [1, 2, 3, 4]
+**/
 export function deepMergeAndCast<T>(target: DeepPartial<T>, source: DeepPartial<T>): T {
     return deepmerge(target as Partial<T>, source as Partial<T>) as T
 }
@@ -74,6 +95,14 @@ export function camelCase(str: string): string {
             .replace('_', ''))
 }
 
+export function parseToJsonIfPossible(str: unknown): unknown {
+    try {
+        return JSON.parse(str as string)
+    }
+    catch (e) {
+        return str
+    }
+}
 
 
 

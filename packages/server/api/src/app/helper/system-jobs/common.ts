@@ -4,13 +4,14 @@ import { Dayjs } from 'dayjs'
 export enum SystemJobName {
     HARD_DELETE_PROJECT = 'hard-delete-project',
     PROJECT_USAGE_REPORT = 'project-usage-report',
+    PLATFORM_USAGE_REPORT = 'platform-usage-report',
     USAGE_REPORT = 'usage-report',
     PIECES_ANALYTICS = 'pieces-analytics',
     PIECES_SYNC = 'pieces-sync',
     TRIAL_TRACKER = 'trial-tracker',
-    TRIGGER_DATA_CLEANER = 'trigger-data-cleaner',
+    FILE_CLEANUP_TRIGGER = 'file-cleanup-trigger',
     ISSUES_REMINDER = 'issue-reminder',
-    LOGS_CLEANUP_TRIGGER = 'logs-cleanup-trigger',
+    RUN_TELEMETRY = 'run-telemetry',
 }
 
 type HardDeleteProjectSystemJobData = {
@@ -26,12 +27,13 @@ type SystemJobDataMap = {
     [SystemJobName.HARD_DELETE_PROJECT]: HardDeleteProjectSystemJobData
     [SystemJobName.ISSUES_REMINDER]: IssuesReminderSystemJobData
     [SystemJobName.PROJECT_USAGE_REPORT]: Record<string, never>
+    [SystemJobName.PLATFORM_USAGE_REPORT]: Record<string, never>
     [SystemJobName.USAGE_REPORT]: Record<string, never>
     [SystemJobName.PIECES_ANALYTICS]: Record<string, never>
     [SystemJobName.PIECES_SYNC]: Record<string, never>
     [SystemJobName.TRIAL_TRACKER]: Record<string, never>
-    [SystemJobName.TRIGGER_DATA_CLEANER]: Record<string, never>
-    [SystemJobName.LOGS_CLEANUP_TRIGGER]: Record<string, never>
+    [SystemJobName.FILE_CLEANUP_TRIGGER]: Record<string, never>
+    [SystemJobName.RUN_TELEMETRY]: Record<string, never>
 }
 
 export type SystemJobData<T extends SystemJobName = SystemJobName> = T extends SystemJobName ? SystemJobDataMap[T] : never

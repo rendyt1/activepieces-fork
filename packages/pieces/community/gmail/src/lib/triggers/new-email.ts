@@ -8,7 +8,7 @@ import dayjs from 'dayjs';
 import { GmailLabel } from '../common/models';
 import { GmailProps } from '../common/props';
 import { gmailAuth } from '../../';
-import { Attachment, ParsedMail, simpleParser } from 'mailparser';
+import { GmailRequests, parseStream, convertAttachment } from '../common/data';
 import { google } from 'googleapis';
 import { OAuth2Client } from 'googleapis-common';
 
@@ -71,36 +71,6 @@ interface PropsValue {
   subject: string | undefined;
   label: GmailLabel | undefined;
   category: string | undefined;
-}
-
-async function parseStream(stream: any) {
-  return new Promise<ParsedMail>((resolve, reject) => {
-    simpleParser(stream, (err, parsed) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(parsed);
-      }
-    });
-  });
-}
-
-async function convertAttachment(
-  attachments: Attachment[],
-  files: FilesService
-) {
-  const promises = attachments.map(async (attachment) => {
-    return {
-      fileName: attachment.filename ?? `attachment-${Date.now()}`,
-      mimeType: attachment.contentType,
-      size: attachment.size,
-      data: await files.write({
-        fileName: attachment.filename ?? `attachment-${Date.now()}`,
-        data: attachment.content,
-      }),
-    };
-  });
-  return Promise.all(promises);
 }
 
 async function pollRecentMessages({

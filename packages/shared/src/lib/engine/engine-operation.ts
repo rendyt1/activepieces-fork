@@ -4,6 +4,7 @@ import { ExecutionState, ExecutionType, ResumePayload } from '../flow-run/execut
 import { FlowRunId, RunEnvironment } from '../flow-run/flow-run'
 import { FlowVersion } from '../flows/flow-version'
 import { PiecePackage } from '../pieces'
+import { PlatformId } from '../platform'
 import { ProjectId } from '../project/project'
 
 export enum EngineOperationType {
@@ -36,11 +37,12 @@ export type BaseEngineOperation = {
     projectId: ProjectId
     engineToken: string
     internalApiUrl: string
-    publicUrl: string
+    publicApiUrl: string
 }
 
-export type ExecuteValidateAuthOperation = BaseEngineOperation & {
+export type ExecuteValidateAuthOperation = Omit<BaseEngineOperation, 'projectId'> & {
     piece: PiecePackage
+    platformId: PlatformId
     auth: AppConnectionValue
 }
 
@@ -49,6 +51,7 @@ export type ExecuteExtractPieceMetadata = PiecePackage
 export type ExecuteStepOperation = BaseEngineOperation &  {
     stepName: string
     flowVersion: FlowVersion
+    sampleData: Record<string, unknown>
 }
 
 export type ExecutePropsOptions = BaseEngineOperation & {
@@ -57,6 +60,7 @@ export type ExecutePropsOptions = BaseEngineOperation & {
     actionOrTriggerName: string
     flowVersion: FlowVersion
     input: Record<string, unknown>
+    sampleData: Record<string, unknown>
     searchValue?: string
 }
 
@@ -95,7 +99,7 @@ export type ExecuteTriggerOperation<HT extends TriggerHookType> = BaseEngineOper
     webhookUrl: string
     triggerPayload?: TriggerPayload
     appWebhookUrl?: string
-    webhookSecret?: string
+    webhookSecret?: string | Record<string, string>
 }
 
 
@@ -198,4 +202,5 @@ export enum EngineResponseStatus {
     OK = 'OK',
     ERROR = 'ERROR',
     TIMEOUT = 'TIMEOUT',
+    MEMORY_ISSUE = 'MEMORY_ISSUE',
 }

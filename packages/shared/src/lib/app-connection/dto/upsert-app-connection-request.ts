@@ -1,9 +1,10 @@
 import { Static, Type } from '@sinclair/typebox'
-import { AppConnectionType } from '../app-connection'
+import { AppConnectionScope, AppConnectionType } from '../app-connection'
 import { OAuth2AuthorizationMethod } from '../oauth2-authorization-method'
 
 const commonAuthProps = {
-    name: Type.String({}),
+    externalId: Type.String({}),
+    displayName: Type.String({}),
     pieceName: Type.String({}),
     projectId: Type.String({}),
 }
@@ -136,3 +137,35 @@ export type UpsertSecretTextRequest = Static<typeof UpsertSecretTextRequest>
 export type UpsertBasicAuthRequest = Static<typeof UpsertBasicAuthRequest>
 export type UpsertCustomAuthRequest = Static<typeof UpsertCustomAuthRequest>
 export type UpsertAppConnectionRequestBody = Static<typeof UpsertAppConnectionRequestBody>
+
+
+export const UpdateConnectionValueRequestBody = Type.Object({
+    displayName: Type.String({
+        minLength: 1,
+    }),
+})
+
+export const UpdateGlobalConnectionValueRequestBody = Type.Object({
+    displayName: Type.String({
+        minLength: 1,
+    }),
+    projectIds: Type.Optional(Type.Array(Type.String())),
+})
+
+export type UpdateConnectionValueRequestBody = Static<typeof UpdateConnectionValueRequestBody>
+export type UpdateGlobalConnectionValueRequestBody = Static<typeof UpdateGlobalConnectionValueRequestBody>
+const GlobalConnectionExtras =  Type.Object({
+    scope: Type.Literal(AppConnectionScope.PLATFORM),
+    projectIds: Type.Array(Type.String()),
+    externalId: Type.Optional(Type.String()),
+})
+export const UpsertGlobalConnectionRequestBody = 
+    Type.Union([
+        Type.Composite([Type.Omit(UpsertSecretTextRequest, ['projectId', 'externalId']), GlobalConnectionExtras]),
+        Type.Composite([Type.Omit(UpsertOAuth2Request, ['projectId', 'externalId']), GlobalConnectionExtras]),
+        Type.Composite([Type.Omit(UpsertCloudOAuth2Request, ['projectId', 'externalId']), GlobalConnectionExtras]),
+        Type.Composite([Type.Omit(UpsertPlatformOAuth2Request, ['projectId', 'externalId']), GlobalConnectionExtras]),
+        Type.Composite([Type.Omit(UpsertBasicAuthRequest, ['projectId', 'externalId']), GlobalConnectionExtras]),
+        Type.Composite([Type.Omit(UpsertCustomAuthRequest, ['projectId', 'externalId']), GlobalConnectionExtras]),
+    ])
+export type UpsertGlobalConnectionRequestBody = Static<typeof UpsertGlobalConnectionRequestBody>

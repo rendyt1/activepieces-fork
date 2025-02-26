@@ -1,4 +1,4 @@
-import { AppSystemProp, system } from '@activepieces/server-shared'
+import { AppSystemProp } from '@activepieces/server-shared'
 import {
     ALL_PRINCIPAL_TYPES,
     isNil,
@@ -6,6 +6,7 @@ import {
 } from '@activepieces/shared'
 import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { paginationHelper } from '../helper/pagination/pagination-utils'
+import { system } from '../helper/system/system'
 
 export const communityFlowTemplateModule: FastifyPluginAsyncTypebox = async (
     app,

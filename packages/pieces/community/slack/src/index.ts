@@ -3,6 +3,7 @@ import {
   OAuth2PropertyValue,
   PieceAuth,
   createPiece,
+  Property,
 } from '@activepieces/pieces-framework';
 import { PieceCategory } from '@activepieces/shared';
 import crypto from 'node:crypto';
@@ -25,6 +26,8 @@ import { addRectionToMessageAction } from './lib/actions/add-reaction-to-message
 import { getChannelHistory } from './lib/actions/get-channel-history';
 import { findUserByHandleAction } from './lib/actions/find-user-by-handle';
 import { setUserStatusAction } from './lib/actions/set-user-status';
+import { newMention } from './lib/triggers/new-mention';
+import { markdownToSlackFormat } from './lib/actions/markdown-to-slack-format';
 
 export const slackAuth = PieceAuth.OAuth2({
   description: '',
@@ -39,10 +42,14 @@ export const slackAuth = PieceAuth.OAuth2({
     'chat:write',
     'groups:read',
     'groups:write',
+    'groups:history',
     'reactions:read',
     'mpim:read',
     'mpim:write',
+    'mpim:history',
     'im:write',
+    'im:read',
+    'im:history',
     'users:read',
     'files:write',
     'files:read',
@@ -54,7 +61,7 @@ export const slackAuth = PieceAuth.OAuth2({
 export const slack = createPiece({
   displayName: 'Slack',
   description: 'Channel-based messaging platform',
-  minimumSupportedRelease: '0.20.0',
+  minimumSupportedRelease: '0.30.0',
   logoUrl: 'https://cdn.activepieces.com/pieces/slack.png',
   categories: [PieceCategory.COMMUNICATION],
   auth: slackAuth,
@@ -79,7 +86,7 @@ export const slack = createPiece({
       const timestamp = payload.headers['x-slack-request-timestamp'];
       const signature = payload.headers['x-slack-signature'];
       const signatureBaseString = `v0:${timestamp}:${payload.rawBody}`;
-      const hmac = crypto.createHmac('sha256', webhookSecret);
+      const hmac = crypto.createHmac('sha256', webhookSecret as string);
       hmac.update(signatureBaseString);
       const computedSignature = `v0=${hmac.digest('hex')}`;
       return signature === computedSignature;
@@ -112,19 +119,38 @@ export const slack = createPiece({
     updateProfileAction,
     getChannelHistory,
     setUserStatusAction,
+    markdownToSlackFormat,
     createCustomApiCallAction({
       baseUrl: () => {
         return 'https://slack.com/api';
       },
       auth: slackAuth,
-      authMapping: async (auth) => {
-        return {
-          Authorization: `Bearer ${(auth as OAuth2PropertyValue).access_token}`,
-        };
+      authMapping: async (auth, propsValue) => {
+        if (propsValue.useUserToken) {
+          return {
+            Authorization: `Bearer ${
+              (auth as OAuth2PropertyValue).data['authed_user']?.access_token
+            }`,
+          };
+        } else {
+          return {
+            Authorization: `Bearer ${
+              (auth as OAuth2PropertyValue).access_token
+            }`,
+          };
+        }
+      },
+      extraProps: {
+        useUserToken: Property.Checkbox({
+          displayName: 'Use user token',
+          description: 'Use user token instead of bot token',
+          required: true,
+          defaultValue: false,
+        }),
       },
     }),
   ],
-  triggers: [newMessage, newReactionAdded, channelCreated],
+  triggers: [newMessage, newMention, newReactionAdded, channelCreated],
 });
 
 type PayloadBody = {

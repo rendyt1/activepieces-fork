@@ -3,7 +3,7 @@ import { createPiece } from '@activepieces/pieces-framework';
 import { createCustomApiCallAction } from '@activepieces/pieces-common';
 import { PieceCategory } from '@activepieces/shared';
 import { JiraAuth, jiraCloudAuth } from './auth';
-import { createIssue } from './lib/actions/create-issue';
+import { createIssueAction } from './lib/actions/create-issue';
 import { searchIssues } from './lib/actions/search-issues';
 import { newIssue } from './lib/triggers/new-issue';
 import { updatedIssue } from './lib/triggers/updated-issue';
@@ -14,24 +14,30 @@ import { deleteIssueCommentAction } from './lib/actions/delete-issue-comment';
 import { updateIssueAction } from './lib/actions/update-issue';
 import { assignIssueAction } from './lib/actions/assign-issue';
 import { listIssueCommentsAction } from './lib/actions/list-issue-comments';
+import { findUserAction } from './lib/actions/find-user';
+import { addWatcherToIssueAction } from './lib/actions/add-watcher-to-issue';
+import { linkIssuesAction } from './lib/actions/link-issues';
 
 export const jiraCloud = createPiece({
 	displayName: 'Jira Cloud',
 	description: 'Issue tracking and project management',
 
 	auth: jiraCloudAuth,
-	minimumSupportedRelease: '0.9.0',
+	minimumSupportedRelease: '0.30.0',
 	logoUrl: 'https://cdn.activepieces.com/pieces/jira.png',
 	categories: [PieceCategory.PRODUCTIVITY],
 	authors: ['kishanprmr', 'MoShizzle', 'abuaboud'],
 	actions: [
-		createIssue,
+		createIssueAction,
 		updateIssueAction,
+		findUserAction,
 		searchIssues,
 		assignIssueAction,
 		addAttachmentToIssueAction,
+		addWatcherToIssueAction,
 		addCommentToIssueAction,
 		updateIssueCommentAction,
+		linkIssuesAction,
 		listIssueCommentsAction,
 		deleteIssueCommentAction,
 		createCustomApiCallAction({

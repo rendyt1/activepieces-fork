@@ -1,31 +1,33 @@
-import { AppSystemProp, DatabaseType, SharedSystemProp, system } from '@activepieces/server-shared'
+import { AppSystemProp } from '@activepieces/server-shared'
 import { ApEdition, ApEnvironment, isNil } from '@activepieces/shared'
 import {
     ArrayContains,
     DataSource,
     EntitySchema,
-    ObjectLiteral,
-    SelectQueryBuilder,
+    FindOperator,
+    Raw,
 } from 'typeorm'
 import { AiProviderEntity } from '../ai/ai-provider-entity'
 import { AppConnectionEntity } from '../app-connection/app-connection.entity'
 import { AppEventRoutingEntity } from '../app-event-routing/app-event-routing.entity'
+import { UserIdentityEntity } from '../authentication/user-identity/user-identity-entity'
 import { AlertEntity } from '../ee/alerts/alerts-entity'
 import { ApiKeyEntity } from '../ee/api-keys/api-key-entity'
 import { AppCredentialEntity } from '../ee/app-credentials/app-credentials.entity'
 import { AuditEventEntity } from '../ee/audit-logs/audit-event-entity'
+import { OtpEntity } from '../ee/authentication/otp/otp-entity'
 import { AppSumoEntity } from '../ee/billing/appsumo/appsumo.entity'
-import { ProjectBillingEntity } from '../ee/billing/project-billing/project-billing.entity'
 import { ConnectionKeyEntity } from '../ee/connection-keys/connection-key.entity'
 import { CustomDomainEntity } from '../ee/custom-domains/custom-domain.entity'
 import { FlowTemplateEntity } from '../ee/flow-template/flow-template.entity'
-import { GitRepoEntity } from '../ee/git-repos/git-repo.entity'
 import { IssueEntity } from '../ee/issues/issues-entity'
 import { OAuthAppEntity } from '../ee/oauth-apps/oauth-app.entity'
-import { OtpEntity } from '../ee/otp/otp-entity'
+import { PlatformBillingEntity } from '../ee/platform-billing/platform-billing.entity'
 import { ProjectMemberEntity } from '../ee/project-members/project-member.entity'
 import { ProjectPlanEntity } from '../ee/project-plan/project-plan.entity'
-import { ReferralEntity } from '../ee/referrals/referral.entity'
+import { GitRepoEntity } from '../ee/project-release/git-sync/git-sync.entity'
+import { ProjectReleaseEntity } from '../ee/project-release/project-release.entity'
+import { ProjectRoleEntity } from '../ee/project-role/project-role.entity'
 import { SigningKeyEntity } from '../ee/signing-key/signing-key-entity'
 import { FileEntity } from '../file/file.entity'
 import { FlagEntity } from '../flags/flag.entity'
@@ -34,6 +36,7 @@ import { FlowRunEntity } from '../flows/flow-run/flow-run-entity'
 import { FlowVersionEntity } from '../flows/flow-version/flow-version-entity'
 import { FolderEntity } from '../flows/folder/folder.entity'
 import { TriggerEventEntity } from '../flows/trigger-events/trigger-event.entity'
+import { DatabaseType, system } from '../helper/system/system'
 import { PieceMetadataEntity } from '../pieces/piece-metadata-entity'
 import { PlatformEntity } from '../platform/platform.entity'
 import { ProjectEntity } from '../project/project-entity'
@@ -75,6 +78,8 @@ function getEntities(): EntitySchema<unknown>[] {
         UserInvitationEntity,
         WorkerMachineEntity,
         AiProviderEntity,
+        ProjectRoleEntity,
+        UserIdentityEntity,
     ]
 
     switch (edition) {
@@ -91,12 +96,13 @@ function getEntities(): EntitySchema<unknown>[] {
                 FlowTemplateEntity,
                 GitRepoEntity,
                 AuditEventEntity,
+                ProjectReleaseEntity,
+
                 // CLOUD
                 AppSumoEntity,
-                ReferralEntity,
                 ConnectionKeyEntity,
                 AppCredentialEntity,
-                ProjectBillingEntity,
+                PlatformBillingEntity,
             )
             break
         case ApEdition.COMMUNITY:
@@ -109,7 +115,7 @@ function getEntities(): EntitySchema<unknown>[] {
 }
 
 const getSynchronize = (): boolean => {
-    const env = system.getOrThrow<ApEnvironment>(SharedSystemProp.ENVIRONMENT)
+    const env = system.getOrThrow<ApEnvironment>(AppSystemProp.ENVIRONMENT)
 
     const value: Partial<Record<ApEnvironment, boolean>> = {
         [ApEnvironment.TESTING]: true,
@@ -135,28 +141,23 @@ export const databaseConnection = () => {
     return _databaseConnection
 }
 
-export function APArrayContains<T extends ObjectLiteral>(
+export function APArrayContains<T>(
     columnName: string,
     values: string[],
-    query: SelectQueryBuilder<T>,
-): SelectQueryBuilder<T> {
+): FindOperator<T> {
     const databaseType = system.get(AppSystemProp.DB_TYPE)
     switch (databaseType) {
         case DatabaseType.POSTGRES:
-            return query.andWhere({
-                [columnName]: ArrayContains(values),
-            })
+            return ArrayContains(values)
         case DatabaseType.SQLITE3: {
             const likeConditions = values
-                .map((tag, index) => `flow_run.tags LIKE :tag${index}`)
+                .map((_, index) => `${columnName} LIKE :value${index}`)
                 .join(' AND ')
-            const likeParams = values.reduce((params, tag, index) => {
-                return {
-                    ...params,
-                    [`tag${index}`]: `%${tag}%`,
-                }
-            }, {})
-            return query.andWhere(likeConditions, likeParams)
+            const likeParams = values.reduce((params, value, index) => {
+                params[`value${index}`] = `%${value}%`
+                return params
+            }, {} as Record<string, string>)
+            return Raw(_ => `(${likeConditions})`, likeParams)
         }
         default:
             throw new Error(`Unsupported database type: ${databaseType}`)

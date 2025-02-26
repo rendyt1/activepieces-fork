@@ -1,109 +1,112 @@
+import { UserInteractionJobType } from '@activepieces/server-shared'
 import {
     ActivepiecesError,
     apId,
     Cursor,
     ErrorCode,
+    FileCompression,
+    FileType,
     FlowId,
     getPieceMajorAndMinorVersion,
     PieceTrigger,
     PopulatedFlow,
     ProjectId,
-    sanitizeObjectForPostgresql,
     SeekPage,
     Trigger,
-    TriggerEvent,
+    TriggerEventWithPayload,
     TriggerHookType,
     TriggerType,
 } from '@activepieces/shared'
-import dayjs from 'dayjs'
-import { engineRunner, webhookUtils } from 'server-worker'
-import { LessThan } from 'typeorm'
-import { accessTokenManager } from '../../authentication/lib/access-token-manager'
+import { FastifyBaseLogger } from 'fastify'
+import { EngineHelperResponse, EngineHelperTriggerResult } from 'server-worker'
 import { repoFactory } from '../../core/db/repo-factory'
+import { fileService } from '../../file/file.service'
 import { buildPaginator } from '../../helper/pagination/build-paginator'
 import { paginationHelper } from '../../helper/pagination/pagination-utils'
 import { Order } from '../../helper/pagination/paginator'
+import { userInteractionWatcher } from '../../workers/user-interaction-watcher'
 import { flowService } from '../flow/flow.service'
 import { TriggerEventEntity } from './trigger-event.entity'
 
 export const triggerEventRepo = repoFactory(TriggerEventEntity)
 
-export const triggerEventService = {
+export const triggerEventService = (log: FastifyBaseLogger) => ({
     async saveEvent({
         projectId,
         flowId,
         payload,
-    }: {
-        projectId: ProjectId
-        flowId: FlowId
-        payload: unknown
-    }): Promise<TriggerEvent> {
-        const flow = await flowService.getOnePopulatedOrThrow({
+    }: SaveEventParams): Promise<TriggerEventWithPayload> {
+        const flow = await flowService(log).getOnePopulatedOrThrow({
             id: flowId,
             projectId,
         })
 
+        const data = Buffer.from(JSON.stringify(payload))
+        const file = await fileService(log).save({
+            projectId,
+            fileName: `${apId()}.json`,
+            data,
+            size: data.length,
+            type: FileType.TRIGGER_EVENT_FILE,
+            compression: FileCompression.NONE,
+        })
         const sourceName = getSourceName(flow.version.trigger)
-        
-        return triggerEventRepo().save({
+
+        const trigger = await triggerEventRepo().save({
             id: apId(),
+            fileId: file.id,
             projectId,
             flowId: flow.id,
             sourceName,
-            payload: sanitizeObjectForPostgresql(payload),
         })
+        return {
+            ...trigger,
+            payload,
+        }
     },
 
     async test({
         projectId,
         flow,
-    }: {
-        projectId: ProjectId
-        flow: PopulatedFlow
-    }): Promise<SeekPage<unknown>> {
+    }: TestParams): Promise<SeekPage<TriggerEventWithPayload>> {
         const trigger = flow.version.trigger
-        const emptyPage = paginationHelper.createPage<TriggerEvent>([], null)
+        const emptyPage = paginationHelper.createPage<TriggerEventWithPayload>([], null)
         switch (trigger.type) {
             case TriggerType.PIECE: {
-                const engineToken = await accessTokenManager.generateEngineToken({
-                    projectId,
-                })
-                const { result: testResult } = await engineRunner.executeTrigger(engineToken, {
+
+                const engineResponse = await userInteractionWatcher(log).submitAndWaitForResponse<EngineHelperResponse<EngineHelperTriggerResult<TriggerHookType.TEST>>>({
                     hookType: TriggerHookType.TEST,
                     flowVersion: flow.version,
-                    webhookUrl: await webhookUtils.getWebhookUrl({
-                        flowId: flow.id,
-                        simulate: true,
-                    }),
-                    test: true, 
+                    test: true,
                     projectId,
+                    jobType: UserInteractionJobType.EXECUTE_TRIGGER_HOOK,
                 })
                 await triggerEventRepo().delete({
                     projectId,
                     flowId: flow.id,
                 })
-                if (!testResult.success) {
+                if (!engineResponse.result.success) {
                     throw new ActivepiecesError({
                         code: ErrorCode.TEST_TRIGGER_FAILED,
                         params: {
-                            message: testResult.message!,
+                            message: engineResponse.result.message!,
                         },
                     })
                 }
 
-                for (const output of testResult.output) {
-                    await triggerEventService.saveEvent({
+                for (const output of engineResponse.result.output) {
+                    await this.saveEvent({
                         projectId,
                         flowId: flow.id,
                         payload: output,
                     })
                 }
 
-                return triggerEventService.list({
+                return this.list({
                     projectId,
                     flow,
                     cursor: null,
-                    limit: testResult.output.length,
+                    limit: engineResponse.result.output.length,
                 })
             }
             case TriggerType.EMPTY:
@@ -116,7 +119,7 @@ export const triggerEventService = {
         flow,
         cursor,
         limit,
-    }: ListParams): Promise<SeekPage<TriggerEvent>> {
+    }: ListParams): Promise<SeekPage<TriggerEventWithPayload>> {
         const decodedCursor = paginationHelper.decodeCursor(cursor)
         const sourceName = getSourceName(flow.version.trigger)
         const flowId = flow.id
@@ -135,15 +138,19 @@ export const triggerEventService = {
             sourceName,
         })
         const { data, cursor: newCursor } = await paginator.paginate(query)
-        return paginationHelper.createPage<TriggerEvent>(data, newCursor)
+        const dataWithPayload = await Promise.all(data.map(async (triggerEvent) => {
+            const fileData = await fileService(log).getDataOrThrow({
+                fileId: triggerEvent.fileId,
+            })
+            const decodedPayload = JSON.parse(fileData.data.toString())
+            return {
+                ...triggerEvent,
+                payload: decodedPayload,
+            }
+        }))
+        return paginationHelper.createPage<TriggerEventWithPayload>(dataWithPayload, newCursor)
     },
-    async deleteEventsOlderThanFourteenDay(): Promise<void> {
-        const fourteenDayAgo = dayjs().subtract(14, 'day').toDate()
-        await triggerEventRepo().delete({
-            created: LessThan(fourteenDayAgo.toISOString()),
-        })
-    },
-}
+})
 
 function getSourceName(trigger: Trigger): string {
     switch (trigger.type) {
@@ -160,6 +167,17 @@ function getSourceName(trigger: Trigger): string {
         case TriggerType.EMPTY:
             return trigger.type
     }
+}
+
+type TestParams = {
+    projectId: ProjectId
+    flow: PopulatedFlow
+}
+
+type SaveEventParams = {
+    projectId: ProjectId
+    flowId: FlowId
+    payload: unknown
 }
 
 type ListParams = {

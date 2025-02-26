@@ -3,7 +3,7 @@ import { t } from 'i18next';
 import { LanguageSwitcher } from '@/app/routes/settings/appearance/language-switcher';
 import { useTheme } from '@/components/theme-provider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/seperator';
+import { Separator } from '@/components/ui/separator';
 
 export default function AppearancePage() {
   const { theme, setTheme } = useTheme();
@@ -16,7 +16,7 @@ export default function AppearancePage() {
     <div className="flex flex-col items-center  gap-4">
       <div className="space-y-6 w-full">
         <div>
-          <h3 className="text-lg font-medium">{t('Appearance')}</h3>
+          <h3 className="text-xl font-semibold">{t('Appearance')}</h3>
           <p className="text-sm text-muted-foreground">
             {t(
               'Customize the appearance of the app. Automatically switch between day and night themes.',

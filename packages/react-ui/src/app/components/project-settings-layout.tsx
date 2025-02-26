@@ -10,45 +10,13 @@ import {
 import { Navigate } from 'react-router-dom';
 
 import SidebarLayout, { SidebarItem } from '@/app/components/sidebar-layout';
+import { useAuthorization } from '@/hooks/authorization-hooks';
 import { platformHooks } from '@/hooks/platform-hooks';
-import { isNil } from '@activepieces/shared';
+import { isNil, Permission } from '@activepieces/shared';
 
 import { authenticationSession } from '../../lib/authentication-session';
 
 const iconSize = 20;
-
-const sidebarNavItems = [
-  {
-    title: t('General'),
-    href: '/settings/general',
-    icon: <Settings size={iconSize} />,
-  },
-  {
-    title: t('Appearance'),
-    href: '/settings/appearance',
-    icon: <SunMoon size={iconSize} />,
-  },
-  {
-    title: t('Team'),
-    href: '/settings/team',
-    icon: <Users size={iconSize} />,
-  },
-  {
-    title: t('Pieces'),
-    href: '/settings/pieces',
-    icon: <Puzzle size={iconSize} />,
-  },
-  {
-    title: t('Alerts'),
-    href: '/settings/alerts',
-    icon: <Bell size={iconSize} />,
-  },
-  {
-    title: t('Git Sync'),
-    href: '/settings/git-sync',
-    icon: <GitBranch size={iconSize} />,
-  },
-];
 
 interface SettingsLayoutProps {
   children: React.ReactNode;
@@ -59,20 +27,58 @@ export default function ProjectSettingsLayout({
 }: SettingsLayoutProps) {
   const { platform } = platformHooks.useCurrentPlatform();
   const currentProjectId = authenticationSession.getProjectId();
+  const { checkAccess } = useAuthorization();
   if (isNil(currentProjectId)) {
     return <Navigate to="/sign-in" replace />;
   }
+  const sidebarNavItems: SidebarItem[] = [
+    {
+      title: t('General'),
+      href: authenticationSession.appendProjectRoutePrefix('/settings/general'),
+      icon: <Settings size={iconSize} />,
+    },
+    {
+      title: t('Appearance'),
+      href: authenticationSession.appendProjectRoutePrefix(
+        '/settings/appearance',
+      ),
+      icon: <SunMoon size={iconSize} />,
+    },
+    {
+      title: t('Team'),
+      href: authenticationSession.appendProjectRoutePrefix('/settings/team'),
+      icon: <Users size={iconSize} />,
+      hasPermission: checkAccess(Permission.READ_PROJECT_MEMBER),
+    },
+    {
+      title: t('Pieces'),
+      href: authenticationSession.appendProjectRoutePrefix('/settings/pieces'),
+      icon: <Puzzle size={iconSize} />,
+    },
+    {
+      title: t('Alerts'),
+      href: authenticationSession.appendProjectRoutePrefix('/settings/alerts'),
+      icon: <Bell size={iconSize} />,
+      hasPermission: checkAccess(Permission.READ_ALERT),
+    },
+    {
+      title: t('Environments'),
+      href: authenticationSession.appendProjectRoutePrefix(
+        '/settings/environments',
+      ),
+      icon: <GitBranch size={iconSize} />,
+      hasPermission: checkAccess(Permission.READ_PROJECT_RELEASE),
+    },
+  ];
 
   const filterAlerts = (item: SidebarItem) =>
     platform.alertsEnabled || item.title !== t('Alerts');
-  const addProjectIdToHref = (item: SidebarItem) => ({
-    ...item,
-    href: `/projects/${currentProjectId}${item.href}`,
-  });
+  const filterOnPermission = (item: SidebarItem) =>
+    isNil(item.hasPermission) || item.hasPermission;
 
   const filteredNavItems = sidebarNavItems
     .filter(filterAlerts)
-    .map(addProjectIdToHref);
+    .filter(filterOnPermission);
 
   return (
     <SidebarLayout title={t('Settings')} items={filteredNavItems}>

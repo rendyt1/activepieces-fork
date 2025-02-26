@@ -12,7 +12,6 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   Form,
@@ -36,31 +35,31 @@ import { gitSyncApi } from '../lib/git-sync-api';
 import { gitSyncHooks } from '../lib/git-sync-hooks';
 
 type PushToGitDialogProps = {
-  flowId: string;
+  flowIds: string[];
   children?: React.ReactNode;
 };
 
-const PushToGitDialog = ({ children, flowId }: PushToGitDialogProps) => {
+const PushToGitDialog = ({ children, flowIds }: PushToGitDialogProps) => {
   const [open, setOpen] = React.useState(false);
 
   const { platform } = platformHooks.useCurrentPlatform();
   const { gitSync } = gitSyncHooks.useGitSync(
-    authenticationSession.getProjectId(),
-    platform.gitSyncEnabled,
+    authenticationSession.getProjectId()!,
+    platform.environmentsEnabled,
   );
   const form = useForm<PushGitRepoRequest>({
     defaultValues: {
       type: GitPushOperationType.PUSH_FLOW,
       commitMessage: '',
-      flowId,
+      flowIds: [],
     },
     resolver: typeboxResolver(PushGitRepoRequest),
   });
 
   const { mutate, isPending } = useMutation({
-    mutationFn: (request: PushGitRepoRequest) => {
+    mutationFn: async (request: PushGitRepoRequest) => {
       assertNotNullOrUndefined(gitSync, 'gitSync');
-      return gitSyncApi.push(gitSync.id, request);
+      await gitSyncApi.push(gitSync.id, { ...request, flowIds });
     },
     onSuccess: () => {
       toast({
@@ -86,11 +85,6 @@ const PushToGitDialog = ({ children, flowId }: PushToGitDialogProps) => {
           <form onSubmit={form.handleSubmit((data) => mutate(data))}>
             <DialogHeader>
               <DialogTitle>{t('Push to Git')}</DialogTitle>
-              <DialogDescription>
-                {t(
-                  'Enter a commit message to describe the changes you want to push.',
-                )}
-              </DialogDescription>
             </DialogHeader>
             <FormField
               control={form.control}
@@ -104,7 +98,22 @@ const PushToGitDialog = ({ children, flowId }: PushToGitDialogProps) => {
                 </FormItem>
               )}
             />
+            <div className="text-sm text-gray-500 mt-2">
+              {t(
+                'Enter a commit message to describe the changes you want to push.',
+              )}
+            </div>
             <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setOpen(false);
+                  form.reset();
+                }}
+              >
+                {t('Cancel')}
+              </Button>
               <Button
                 type="submit"
                 loading={isPending}

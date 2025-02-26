@@ -1,64 +1,67 @@
-import { AppSystemProp, logger, system } from '@activepieces/server-shared'
-import { FileType, isNil } from '@activepieces/shared'
+import { TelemetryEventName } from '@activepieces/shared'
 import dayjs from 'dayjs'
 import { FastifyPluginAsync } from 'fastify'
-import { In, LessThanOrEqual } from 'typeorm'
+import { Between } from 'typeorm'
 import { entitiesMustBeOwnedByCurrentProject } from '../../authentication/authorization'
-import { fileRepo } from '../../file/file.service'
 import { systemJobsSchedule } from '../../helper/system-jobs'
-import { SystemJobName } from '../../helper/system-jobs/common'
+import { SystemJobData, SystemJobName } from '../../helper/system-jobs/common'
 import { systemJobHandlers } from '../../helper/system-jobs/job-handlers'
-import { webhookResponseWatcher } from '../../workers/helper/webhook-response-watcher'
-import { flowRunController as controller } from './flow-run-controller'
+import { telemetry } from '../../helper/telemetry.utils'
+import { engineResponseWatcher } from '../../workers/engine-response-watcher'
+import { flowRunController } from './flow-run-controller'
+import { flowRunRepo } from './flow-run-service'
 
-const EXECUTION_DATA_RETENTION_DAYS = system.getNumberOrThrow(AppSystemProp.EXECUTION_DATA_RETENTION_DAYS)
 
 export const flowRunModule: FastifyPluginAsync = async (app) => {
     app.addHook('preSerialization', entitiesMustBeOwnedByCurrentProject)
-    await app.register(controller, { prefix: '/v1/flow-runs' })
-    await webhookResponseWatcher.init()
-    systemJobHandlers.registerJobHandler(SystemJobName.LOGS_CLEANUP_TRIGGER, async () => {
-        logger.info({
-            name: SystemJobName.LOGS_CLEANUP_TRIGGER,
-        }, 'Logs cleanup started')
-        const retentionDateBoundary = dayjs().subtract(EXECUTION_DATA_RETENTION_DAYS, 'days').toISOString()
-        const maximumFilesToDeletePerIteration = 4000
-        let affected: undefined | number = undefined
-        let totalAffected = 0
-        while (isNil(affected) || affected === maximumFilesToDeletePerIteration) {
-            const logsFileIds = await fileRepo().find({
-                select: ['id', 'created'],
-                where: {
-                    type: FileType.FLOW_RUN_LOG,
-                    created: LessThanOrEqual(retentionDateBoundary),
-                },
-                take: maximumFilesToDeletePerIteration,
-            })
-            const result = await fileRepo().delete({
-                type: FileType.FLOW_RUN_LOG,
-                created: LessThanOrEqual(retentionDateBoundary),
-                id: In(logsFileIds.map(log => log.id)),
-            })
-            affected = result.affected || 0
-            totalAffected += affected
-            logger.info({
-                name: SystemJobName.LOGS_CLEANUP_TRIGGER,
-                counts: affected,
-            }, 'Logs cleanup iteration completed')
+    await app.register(flowRunController, { prefix: '/v1/flow-runs' })
+    systemJobHandlers.registerJobHandler(SystemJobName.RUN_TELEMETRY, async (_job: SystemJobData<SystemJobName.RUN_TELEMETRY>) => {
+        if (!telemetry(app.log).isEnabled()) {
+            return
         }
-        logger.info({
-            name: SystemJobName.LOGS_CLEANUP_TRIGGER,
-            totalAffected,
-        }, 'Logs cleanup completed')
+        app.log.info({
+            name: SystemJobName.RUN_TELEMETRY,
+        }, 'Run telemetry started')
+        const startOfDay = dayjs().startOf('day').toISOString()
+        const endOfDay = dayjs().endOf('day').toISOString()
+        const projectFlowCounts = await flowRunRepo().createQueryBuilder('flowRun')
+            .select('"projectId", "flowId", "environment", COUNT(*) as count')
+            .where({
+                created: Between(startOfDay, endOfDay),
+            })
+            .groupBy('"projectId", "flowId", "environment"')
+            .getRawMany()
+        for (const { projectId, flowId, environment, count } of projectFlowCounts) {
+            app.log.info({
+                projectId,
+                flowId,
+                environment,
+                count: parseInt(count, 10),
+            }, 'Tracking flow run created')
+            telemetry(app.log)
+                .trackProject(projectId, {
+                    name: TelemetryEventName.FLOW_RUN_CREATED,
+                    payload: {
+                        projectId,
+                        flowId,
+                        environment,
+                        count: parseInt(count, 10),
+                    },
+                })
+                .catch((e) =>
+                    app.log.error(e, '[FlowRunService#Start] telemetry.trackProject'),
+                )
+        }
     })
-    await systemJobsSchedule.upsertJob({
+    await systemJobsSchedule(app.log).upsertJob({
         job: {
-            name: SystemJobName.LOGS_CLEANUP_TRIGGER,
+            name: SystemJobName.RUN_TELEMETRY,
             data: {},
         },
         schedule: {
             type: 'repeated',
-            cron: '0 * */1 * *',
+            cron: '0/50 23 * * *',
         },
     })
+    await engineResponseWatcher(app.log).init()
 }

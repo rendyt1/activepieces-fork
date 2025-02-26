@@ -8,10 +8,17 @@ import { useSocket } from '@/components/socket-provider';
 import { Button } from '@/components/ui/button';
 import { Dot } from '@/components/ui/dot';
 import { INTERNAL_ERROR_TOAST, useToast } from '@/components/ui/use-toast';
-import { formatUtils } from '@/lib/utils';
-import { Action, StepRunResponse, isNil } from '@activepieces/shared';
+import { sampleDataApi } from '@/features/flows/lib/sample-data-api';
+import {
+  Action,
+  ActionType,
+  StepRunResponse,
+  flowStructureUtil,
+  isNil,
+} from '@activepieces/shared';
 
 import { flowRunsApi } from '../../../features/flow-runs/lib/flow-runs-api';
+import { useBuilderStateContext } from '../builder-hooks';
 
 import { TestSampleDataViewer } from './test-sample-data-viewer';
 import { TestButtonTooltip } from './test-step-tooltip';
@@ -20,17 +27,27 @@ import { testStepUtils } from './test-step-utils';
 type TestActionComponentProps = {
   isSaving: boolean;
   flowVersionId: string;
+  projectId: string;
 };
 
 const TestActionSection = React.memo(
-  ({ isSaving, flowVersionId }: TestActionComponentProps) => {
+  ({ isSaving, flowVersionId, projectId }: TestActionComponentProps) => {
     const { toast } = useToast();
     const [errorMessage, setErrorMessage] = useState<string | undefined>(
       undefined,
     );
-    const form = useFormContext<Action>();
+    const form = useFormContext<Pick<Action, 'settings' | 'name'>>();
     const formValues = form.getValues();
-
+    const [consoleLogs, setConsoleLogs] = useState<null | string>(null);
+    const { sampleData, setSampleData, selectedStep, trigger } =
+      useBuilderStateContext((state) => {
+        return {
+          sampleData: state.sampleData[formValues.name],
+          setSampleData: state.setSampleData,
+          selectedStep: state.selectedStep,
+          trigger: state.flowVersion.trigger,
+        };
+      });
     const [isValid, setIsValid] = useState(false);
 
     useEffect(() => {
@@ -40,49 +57,69 @@ const TestActionSection = React.memo(
     const [lastTestDate, setLastTestDate] = useState(
       formValues.settings.inputUiInfo?.lastTestDate,
     );
-    const { currentSelectedData } = formValues.settings.inputUiInfo ?? {};
+
     const sampleDataExists = !isNil(lastTestDate) || !isNil(errorMessage);
 
     const socket = useSocket();
 
     const { mutate, isPending: isTesting } = useMutation<
-      StepRunResponse,
+      StepRunResponse & { sampleDataFileId?: string },
       Error,
       void
     >({
       mutationFn: async () => {
-        return flowRunsApi.testStep(socket, {
+        const testStepResponse = await flowRunsApi.testStep(socket, {
           flowVersionId,
           stepName: formValues.name,
         });
+        let sampleDataFileId: string | undefined = undefined;
+        if (testStepResponse.success && !isNil(testStepResponse.output)) {
+          const sampleFile = await sampleDataApi.save({
+            flowVersionId,
+            stepName: formValues.name,
+            payload: testStepResponse.output,
+            projectId,
+          });
+          sampleDataFileId = sampleFile.id;
+        }
+        return {
+          ...testStepResponse,
+          sampleDataFileId,
+        };
       },
-      onSuccess: (stepResponse) => {
-        const formattedResponse = formatUtils.formatStepInputOrOutput(
-          stepResponse.output,
-          null,
-        );
-        if (stepResponse.success) {
+      onSuccess: ({
+        success,
+        output,
+        sampleDataFileId,
+        standardOutput,
+        standardError,
+      }) => {
+        if (success) {
           setErrorMessage(undefined);
 
+          const newInputUiInfo = {
+            ...formValues.settings.inputUiInfo,
+            sampleDataFileId,
+            currentSelectedData: undefined,
+            lastTestDate: dayjs().toISOString(),
+          };
           form.setValue(
-            'settings.inputUiInfo.currentSelectedData',
-            formattedResponse,
-            { shouldValidate: true },
-          );
-          form.setValue(
-            'settings.inputUiInfo.lastTestDate',
-            dayjs().toISOString(),
-            { shouldValidate: true },
+            'settings.inputUiInfo',
+            newInputUiInfo as typeof formValues.settings.inputUiInfo,
+            {
+              shouldValidate: true,
+            },
           );
         } else {
           setErrorMessage(
             testStepUtils.formatErrorMessage(
-              JSON.stringify(formattedResponse) ||
+              JSON.stringify(output) ||
                 t('Failed to run test step and no error message was returned'),
             ),
           );
         }
-
+        setSampleData(formValues.name, output);
+        setConsoleLogs(standardOutput || standardError);
         setLastTestDate(dayjs().toISOString());
       },
       onError: (error) => {
@@ -117,10 +154,16 @@ const TestActionSection = React.memo(
             isValid={isValid}
             isSaving={isSaving}
             isTesting={isTesting}
-            currentSelectedData={currentSelectedData}
+            sampleData={sampleData}
             errorMessage={errorMessage}
             lastTestDate={lastTestDate}
-            type={formValues.type}
+            consoleLogs={
+              selectedStep &&
+              flowStructureUtil.getStep(selectedStep, trigger)?.type ===
+                ActionType.CODE
+                ? consoleLogs
+                : null
+            }
           ></TestSampleDataViewer>
         )}
       </>

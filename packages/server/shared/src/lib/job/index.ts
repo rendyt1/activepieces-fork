@@ -1,11 +1,9 @@
 import {
-    EngineHttpResponse,
     EngineOperationType,
     ProgressUpdateType,
+    RunEnvironment,
 } from '@activepieces/shared'
 import { Static, Type } from '@sinclair/typebox'
-import { system } from '../system/system'
-import { SharedSystemProp } from '../system/system-prop'
 import { DelayedJobData, JobData } from './job-data'
 
 export enum JobType {
@@ -13,6 +11,7 @@ export enum JobType {
     ONE_TIME = 'ONE_TIME',
     REPEATING = 'REPEATING',
     DELAYED = 'DELAYED',
+    USERS_INTERACTION = 'USERS_INTERACTION',
 }
 
 export enum JobStatus {
@@ -24,6 +23,7 @@ export enum QueueName {
     WEBHOOK = 'webhookJobs',
     ONE_TIME = 'oneTimeJobs',
     SCHEDULED = 'repeatableJobs',
+    USERS_INTERACTION = 'usersInteractionJobs',
 }
 
 export const PollJobRequest = Type.Object({
@@ -57,20 +57,12 @@ export const ApQueueJob = Type.Object({
 
 export type ApQueueJob = Static<typeof ApQueueJob>
 
-export const DeleteWebhookSimulationRequest = Type.Object({
-    flowId: Type.String(),
-    projectId: Type.String(),
-})
-export type DeleteWebhookSimulationRequest = Static<
-  typeof DeleteWebhookSimulationRequest
->
-
-export const SendWebhookUpdateRequest = Type.Object({
+export const SendEngineUpdateRequest = Type.Object({
     workerServerId: Type.String(),
     requestId: Type.String(),
-    response: EngineHttpResponse,
+    response: Type.Unknown(),
 })
-export type SendWebhookUpdateRequest = Static<typeof SendWebhookUpdateRequest>
+export type SendEngineUpdateRequest = Static<typeof SendEngineUpdateRequest>
 
 export const SavePayloadRequest = Type.Object({
     flowId: Type.String(),
@@ -86,6 +78,7 @@ export const SubmitPayloadsRequest = Type.Object({
     synchronousHandlerId: Type.Optional(Type.String()),
     httpRequestId: Type.Optional(Type.String()),
     payloads: Type.Array(Type.Unknown()),
+    environment: Type.Enum(RunEnvironment),
 })
 
 export type SubmitPayloadsRequest = Static<typeof SubmitPayloadsRequest>
@@ -98,13 +91,8 @@ export type GetRunForWorkerRequest = Static<typeof GetRunForWorkerRequest>
 export const ResumeRunRequest = DelayedJobData
 export type ResumeRunRequest = Static<typeof ResumeRunRequest>
 
-export const flowTimeoutSandbox =
-  system.getNumber(SharedSystemProp.FLOW_TIMEOUT_SECONDS) ??
-  600
-export const triggerTimeoutSandbox =
-  system.getNumber(SharedSystemProp.TRIGGER_TIMEOUT_SECONDS) ?? 60
 
-export function getEngineTimeout(operationType: EngineOperationType): number {
+export function getEngineTimeout(operationType: EngineOperationType, flowTimeoutSandbox: number, triggerTimeoutSandbox: number): number {
     switch (operationType) {
         case EngineOperationType.EXECUTE_STEP:
         case EngineOperationType.EXECUTE_FLOW:

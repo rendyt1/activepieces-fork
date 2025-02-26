@@ -11,6 +11,61 @@ export enum FilteredPieceBehavior {
     BLOCKED = 'BLOCKED',
 }
 
+export const SMTPInformation = Type.Object({
+    user: Type.String(),
+    senderEmail: Type.String(),
+    senderName: Type.String(),
+    password: Type.String(),
+    host: Type.String(),
+    port: Type.Number(),
+})
+
+export type SMTPInformation = Static<typeof SMTPInformation>
+
+export enum CopilotProviderType {
+    OPENAI = 'openai',
+    AZURE_OPENAI = 'azureOpenai',
+}
+  
+export const OpenAiProvider = Type.Object({
+    baseUrl: Type.String(),
+    apiKey: Type.String(),
+})
+
+export type OpenAiProvider = Static<typeof OpenAiProvider>
+
+export const AzureOpenAiProvider = Type.Object({
+    resourceName: Type.String(),
+    deploymentName: Type.String(),
+    apiKey: Type.String(),
+})
+
+export type AzureOpenAiProvider = Static<typeof AzureOpenAiProvider>
+
+export const CopilotSettings = Type.Object({
+    providers: Type.Object({
+        [CopilotProviderType.OPENAI]: Type.Optional(OpenAiProvider),
+        [CopilotProviderType.AZURE_OPENAI]: Type.Optional(AzureOpenAiProvider),
+    }),
+})
+
+export type CopilotSettings = Static<typeof CopilotSettings>
+
+export const CopilotSettingsWithoutSensitiveData = Type.Object({
+    providers: Type.Object({
+        [CopilotProviderType.OPENAI]: Type.Optional(Type.Object({})),
+        [CopilotProviderType.AZURE_OPENAI]: Type.Optional(Type.Object({})),
+    }),
+})
+export type CopilotSettingsWithoutSensitiveData = Static<typeof CopilotSettingsWithoutSensitiveData>
+
+export const PlatformUsage = Type.Object({
+    tasks: Type.Number(),
+    aiCredits: Type.Number(),
+})
+
+export type PlatformUsage = Static<typeof PlatformUsage>
+
 export const Platform = Type.Object({
     ...BaseModelSchema,
     ownerId: ApId,
@@ -27,16 +82,9 @@ export const Platform = Type.Object({
     * @deprecated Use projects filter instead.
     */
     filteredPieceBehavior: Type.Enum(FilteredPieceBehavior),
-    smtpHost: Type.Optional(Type.String()),
-    smtpPort: Type.Optional(Type.Number()),
-    smtpUser: Type.Optional(Type.String()),
-    smtpPassword: Type.Optional(Type.String()),
-    smtpSenderEmail: Type.Optional(Type.String()),
-    smtpUseSSL: Type.Optional(Type.Boolean()),
-    privacyPolicyUrl: Type.Optional(Type.String()),
-    termsOfServiceUrl: Type.Optional(Type.String()),
+    smtp: Nullable(SMTPInformation),
     cloudAuthEnabled: Type.Boolean(),
-    gitSyncEnabled: Type.Boolean(),
+    environmentsEnabled: Type.Boolean(),
     analyticsEnabled: Type.Boolean(),
     showPoweredBy: Type.Boolean(),
     auditLogEnabled: Type.Boolean(),
@@ -47,6 +95,8 @@ export const Platform = Type.Object({
     manageProjectsEnabled: Type.Boolean(),
     projectRolesEnabled: Type.Boolean(),
     customDomainsEnabled: Type.Boolean(),
+    globalConnectionsEnabled: Type.Boolean(),
+    customRolesEnabled: Type.Boolean(),
     apiKeysEnabled: Type.Boolean(),
     flowIssuesEnabled: Type.Boolean(),
     alertsEnabled: Type.Boolean(),
@@ -56,14 +106,54 @@ export const Platform = Type.Object({
     allowedAuthDomains: Type.Array(Type.String()),
     federatedAuthProviders: FederatedAuthnProviderConfig,
     emailAuthEnabled: Type.Boolean(),
-    premiumPieces: Type.Array(Type.String()),
+    licenseKey: Type.Optional(Type.String()),
+    pinnedPieces: Type.Array(Type.String()),
+    copilotSettings: Type.Optional(CopilotSettings),
 })
 
 export type Platform = Static<typeof Platform>
 
+
 export const PlatformWithoutSensitiveData = Type.Composite([Type.Object({
     federatedAuthProviders: FederatedAuthnProviderConfigWithoutSensitiveData,
     defaultLocale: Nullable(Type.String()),
-}), Type.Omit(Platform, ['smtpPassword', 'federatedAuthProviders', 'defaultLocale'])])
+    copilotSettings: Type.Optional(CopilotSettingsWithoutSensitiveData),
+    smtp: Nullable(Type.Object({})),
+}), Type.Pick(Platform, [
+    'id',
+    'created',
+    'updated',
+    'ownerId',
+    'name',
+    'primaryColor',
+    'logoIconUrl',
+    'fullLogoUrl',
+    'favIconUrl',
+    'filteredPieceNames',
+    'filteredPieceBehavior',
+    'cloudAuthEnabled',
+    'gitSyncEnabled',
+    'analyticsEnabled',
+    'showPoweredBy',
+    'environmentsEnabled',
+    'auditLogEnabled',
+    'embeddingEnabled',
+    'managePiecesEnabled',
+    'manageTemplatesEnabled',
+    'customAppearanceEnabled',
+    'manageProjectsEnabled',
+    'projectRolesEnabled',
+    'customDomainsEnabled',
+    'globalConnectionsEnabled',
+    'customRolesEnabled',
+    'apiKeysEnabled',
+    'flowIssuesEnabled',
+    'alertsEnabled',
+    'ssoEnabled',
+    'enforceAllowedAuthDomains',
+    'allowedAuthDomains',
+    'emailAuthEnabled',
+    'pinnedPieces',
+])])
 
 export type PlatformWithoutSensitiveData = Static<typeof PlatformWithoutSensitiveData>

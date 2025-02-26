@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import {
   Action,
   ActionType,
-  flowHelper,
+  flowStructureUtil,
   isNil,
   Trigger,
 } from '@activepieces/shared';
@@ -91,10 +91,10 @@ const getAllStepsMentions: (state: BuilderState) => MentionTreeNode[] = (
   if (!selectedStep || !flowVersion || !flowVersion.trigger) {
     return [];
   }
-  const pathToTargetStep = flowHelper.findPathToStep({
-    targetStepName: selectedStep,
-    trigger: flowVersion.trigger,
-  });
+  const pathToTargetStep = flowStructureUtil.findPathToStep(
+    flowVersion.trigger,
+    selectedStep,
+  );
 
   return pathToTargetStep.map((step) => {
     const stepNeedsTesting = isNil(step.settings.inputUiInfo?.lastTestDate);
@@ -104,7 +104,7 @@ const getAllStepsMentions: (state: BuilderState) => MentionTreeNode[] = (
     }
     return dataSelectorUtils.traverseStepOutputAndReturnMentionTree({
       insertable: step.type !== ActionType.LOOP_ON_ITEMS,
-      stepOutput: step.settings.inputUiInfo?.currentSelectedData,
+      stepOutput: state.sampleData[step.name],
       propertyPath: step.name,
       displayName: displayName,
     });

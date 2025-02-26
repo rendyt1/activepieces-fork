@@ -9,6 +9,7 @@ import {
     PieceOrderBy,
     PieceSortBy,
     PieceType,
+    PlatformId,
     ProjectId,
     SuggestionType,
 } from '@activepieces/shared'
@@ -32,10 +33,10 @@ type ListParams = {
 type GetOrThrowParams = {
     name: string
     version: string | undefined
-    projectId: string | undefined
     entityManager?: EntityManager
+    projectId: string | undefined
+    platformId: string | undefined
 }
-
 
 type ListVersionsParams = {
     name: string
@@ -43,11 +44,6 @@ type ListVersionsParams = {
     release: string | undefined
     edition: ApEdition
     platformId: string | undefined
-}
-
-type DeleteParams = {
-    id: string
-    projectId?: string
 }
 
 type CreateParams = {
@@ -68,6 +64,7 @@ type GetExactPieceVersionParams = {
     name: string
     version: string
     projectId: ProjectId
+    platformId: PlatformId
 }
 
 export type PieceMetadataService = {
@@ -76,7 +73,6 @@ export type PieceMetadataService = {
     getOrThrow(params: GetOrThrowParams): Promise<PieceMetadataModel>
     getVersions(params: ListVersionsParams): Promise<ListVersionsResponse>
     create(params: CreateParams): Promise<PieceMetadataModel>
-    delete(params: DeleteParams): Promise<void>
     updateUsage(params: UpdateUsage): Promise<void>
     getExactPieceVersion(params: GetExactPieceVersionParams): Promise<string>
 }

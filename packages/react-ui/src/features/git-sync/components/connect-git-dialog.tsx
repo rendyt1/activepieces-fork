@@ -6,8 +6,8 @@ import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -20,23 +20,32 @@ import {
   FormField,
   FormItem,
   FormLabel,
+  FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { INTERNAL_ERROR_TOAST, toast } from '@/components/ui/use-toast';
+import { INTERNAL_ERROR_MESSAGE, toast } from '@/components/ui/use-toast';
 import { platformHooks } from '@/hooks/platform-hooks';
+import { api } from '@/lib/api';
 import { authenticationSession } from '@/lib/authentication-session';
 import {
   ConfigureRepoRequest,
   GitBranchType,
   GitRepo,
 } from '@activepieces/ee-shared';
+import { ApErrorParams, ErrorCode } from '@activepieces/shared';
 
 import { gitSyncApi } from '../lib/git-sync-api';
 import { gitSyncHooks } from '../lib/git-sync-hooks';
 
-const ConnectGitDialog = () => {
-  const projectId = authenticationSession.getProjectId();
+type ConnectGitProps = {
+  open?: boolean;
+  setOpen?: (open: boolean) => void;
+  showButton?: boolean;
+};
+
+const ConnectGitDialog = ({ open, setOpen, showButton }: ConnectGitProps) => {
+  const projectId = authenticationSession.getProjectId()!;
   const { platform } = platformHooks.useCurrentPlatform();
 
   const form = useForm<ConfigureRepoRequest>({
@@ -53,7 +62,7 @@ const ConnectGitDialog = () => {
 
   const { refetch } = gitSyncHooks.useGitSync(
     projectId,
-    platform.gitSyncEnabled,
+    platform.environmentsEnabled,
   );
 
   const { mutate, isPending } = useMutation({
@@ -69,32 +78,41 @@ const ConnectGitDialog = () => {
       });
     },
     onError: (error) => {
-      toast(INTERNAL_ERROR_TOAST);
-      console.error(error);
+      let message = INTERNAL_ERROR_MESSAGE;
+
+      if (api.isError(error)) {
+        const responseData = error.response?.data as ApErrorParams;
+        if (responseData.code === ErrorCode.INVALID_GIT_CREDENTIALS) {
+          message = `Invalid git credentials, please check the credentials, \n ${responseData.params.message}`;
+        }
+      }
+      form.setError('root.serverError', {
+        message: message,
+      });
+      return;
     },
   });
+
   return (
-    <Form {...form}>
-      <form
-        className="grid space-y-4"
-        onSubmit={form.handleSubmit((data) => mutate(data))}
-      >
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button size={'sm'} className="w-32">
-              {t('Connect Git')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={open} onOpenChange={setOpen} modal={true}>
+      {showButton && (
+        <DialogTrigger asChild>
+          <Button size={'sm'} className="w-32">
+            {t('Connect Git')}
+          </Button>
+        </DialogTrigger>
+      )}
+      <DialogContent className="sm:max-w-[500px]">
+        <Form {...form}>
+          <form
+            className="flex flex-col"
+            onSubmit={form.handleSubmit((data) => mutate(data))}
+          >
             <DialogHeader>
               <DialogTitle>{t('Connect Git')}</DialogTitle>
-              <DialogDescription>
-                {t(
-                  'Start by connecting an empty git repository to your project.',
-                )}
-              </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+
+            <div className="grid gap-4">
               <FormField
                 control={form.control}
                 name="remoteUrl"
@@ -157,9 +175,19 @@ const ConnectGitDialog = () => {
                   </FormItem>
                 )}
               />
+              {form?.formState?.errors?.root?.serverError && (
+                <FormMessage>
+                  {form.formState.errors.root.serverError.message}
+                </FormMessage>
+              )}
             </div>
 
             <DialogFooter>
+              <DialogClose>
+                <Button type="button" variant={'outline'} loading={isPending}>
+                  {t('Cancel')}
+                </Button>
+              </DialogClose>
               <Button
                 type="submit"
                 onClick={form.handleSubmit((data) => mutate(data))}
@@ -168,10 +196,10 @@ const ConnectGitDialog = () => {
                 {t('Connect')}
               </Button>
             </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </form>
-    </Form>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 };
 

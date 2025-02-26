@@ -1,10 +1,12 @@
-import { AppSystemProp, JobType, OneTimeJobData, QueueName, system, WebhookJobData } from '@activepieces/server-shared'
-import { apId, assertNotNullOrUndefined, assertNull } from '@activepieces/shared'
+import { AppSystemProp, JobType, OneTimeJobData, QueueName, WebhookJobData } from '@activepieces/server-shared'
+import { apId, assertNotNullOrUndefined, assertNull, isNil } from '@activepieces/shared'
 import { Job, Queue, Worker } from 'bullmq'
 import dayjs from 'dayjs'
 
+import { FastifyBaseLogger } from 'fastify'
 import { Redis } from 'ioredis'
 import { createRedisClient, getRedisConnection } from '../../database/redis-connection'
+import { system } from '../../helper/system/system'
 import { AddParams } from '../queue/queue-manager'
 import { redisQueue } from './redis-queue'
 
@@ -18,9 +20,10 @@ let redis: Redis
 let worker: Worker | null = null
 let queue: Queue | null = null
 
-const projecyKey = (projectId: string): string => `active_job_count:${projectId}`
+const projectKey = (projectId: string): string => `active_job_count:${projectId}`
+const projectKeyWithJobId = (projectId: string, jobId: string): string => `${projectKey(projectId)}:${jobId}`
 
-export const redisRateLimiter = {
+export const redisRateLimiter = (log: FastifyBaseLogger) => ({
 
     async init(): Promise<void> {
         assertNull(queue, 'queue is not null')
@@ -42,7 +45,7 @@ export const redisRateLimiter = {
         )
         await queue.waitUntilReady()
         worker = new Worker<AddParams<JobType.ONE_TIME | JobType.WEBHOOK>>(RATE_LIMIT_QUEUE_NAME,
-            async (job) => redisQueue.add(job.data)
+            async (job) => redisQueue(log).add(job.data)
             , {
                 connection: createRedisClient(),
                 maxStalledCount: 5,
@@ -65,11 +68,11 @@ export const redisRateLimiter = {
     },
 
     async onCompleteOrFailedJob(queueName: QueueName, job: Job<WebhookJobData | OneTimeJobData>): Promise<void> {
-        if (!SUPPORTED_QUEUES.includes(queueName) || !PROJECT_RATE_LIMITER_ENABLED) {
+        if (!SUPPORTED_QUEUES.includes(queueName) || !PROJECT_RATE_LIMITER_ENABLED || isNil(job.id)) {
             return
         }
-        const redisKey = projecyKey(job.data.projectId)
-        await redis.incrby(redisKey, -1)
+        const redisKey = projectKeyWithJobId(job.data.projectId, job.id)
+        await redis.del(redisKey)
     },
 
     async getQueue(): Promise<Queue> {
@@ -77,26 +80,27 @@ export const redisRateLimiter = {
         return queue
     },
 
-    async shouldBeLimited(queueName: QueueName, projectId: string, value: number): Promise<{
+    async shouldBeLimited(projectId: string | undefined, jobId: string): Promise<{
         shouldRateLimit: boolean
     }> {
-        if (!SUPPORTED_QUEUES.includes(queueName) || !PROJECT_RATE_LIMITER_ENABLED) {
+        if (isNil(projectId) || !PROJECT_RATE_LIMITER_ENABLED) {
             return {
                 shouldRateLimit: false,
             }
         }
-        const redisKey = projecyKey(projectId)
-        const newActiveRuns = await redis.incrby(redisKey, value)
-        await redis.expire(redisKey, 600)
+
+        const newActiveRuns = (await redis.keys(`${projectKey(projectId)}*`)).length
         if (newActiveRuns >= MAX_CONCURRENT_JOBS_PER_PROJECT) {
-            await redis.incrby(redisKey, -value)
             return {
                 shouldRateLimit: true,
             }
         }
+        const redisKey = projectKeyWithJobId(projectId, jobId)
+        await redis.set(redisKey, 1, 'EX', 600)
+
         return {
             shouldRateLimit: false,
         }
     },
 
-}
+})

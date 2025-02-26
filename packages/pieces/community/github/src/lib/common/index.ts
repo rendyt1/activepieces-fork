@@ -1,10 +1,14 @@
-import { Property, OAuth2PropertyValue } from '@activepieces/pieces-framework';
 import {
-	HttpRequest,
-	HttpMethod,
 	AuthenticationType,
 	httpClient,
+	HttpMessageBody,
+	HttpMethod,
+	HttpRequest,
+	HttpResponse,
+	QueryParams,
 } from '@activepieces/pieces-common';
+import { Property, OAuth2PropertyValue } from '@activepieces/pieces-framework';
+import { isNil } from '@activepieces/shared';
 
 export const githubCommon = {
 	baseUrl: 'https://api.github.com',
@@ -95,86 +99,114 @@ export const githubCommon = {
 		}),
 };
 
-async function getUserRepo(authProp: OAuth2PropertyValue): Promise<GithubRepository[]> {
-	let page = 1;
-	let hasNext;
-	const repos: GithubRepository[] = [];
-	do {
-		const request: HttpRequest = {
-			method: HttpMethod.GET,
-			url: `${githubCommon.baseUrl}/user/repos`,
-			queryParams: {
-				page: page.toString(),
-				per_page: '100',
-			},
-			authentication: {
-				type: AuthenticationType.BEARER_TOKEN,
-				token: authProp.access_token,
-			},
-		};
-
-		const response = await httpClient.sendRequest<GithubRepository[]>(request);
-		repos.push(...response.body);
-
-		hasNext = response.headers?.link?.includes('rel="next"');
-		page += 1;
-	} while (hasNext);
-
-	return repos;
-}
-async function getAssignee(
-	authProp: OAuth2PropertyValue,
-	owner: string,
-	repo: string,
-): Promise<GithubAssignee[]> {
-	const request: HttpRequest = {
+async function getUserRepo(authProp: OAuth2PropertyValue) {
+	const response = await githubPaginatedApiCall<{
+		id: number;
+		name: string;
+		owner: { login: string };
+	}>({
+		accessToken: authProp.access_token,
 		method: HttpMethod.GET,
-		url: `${githubCommon.baseUrl}/repos/${owner}/${repo}/assignees`,
-		queryParams: {
-			per_page: '30',
-		},
-		authentication: {
-			type: AuthenticationType.BEARER_TOKEN,
-			token: authProp.access_token,
-		},
-	};
-	const response = await httpClient.sendRequest<GithubAssignee[]>(request);
-	return response.body;
+		resourceUri: '/user/repos',
+	});
+	return response;
 }
 
-async function listIssueLabels(
-	authProp: OAuth2PropertyValue,
-	owner: string,
-	repo: string,
-): Promise<GithubIssueLabel[]> {
-	const request: HttpRequest = {
+async function getAssignee(authProp: OAuth2PropertyValue, owner: string, repo: string) {
+	const response = await githubPaginatedApiCall<{ id: number; login: string }>({
+		accessToken: authProp.access_token,
 		method: HttpMethod.GET,
-		url: `${githubCommon.baseUrl}/repos/${owner}/${repo}/labels`,
-		queryParams: {
-			per_page: '30',
-		},
-		authentication: {
-			type: AuthenticationType.BEARER_TOKEN,
-			token: authProp.access_token,
-		},
-	};
-	const response = await httpClient.sendRequest<GithubIssueLabel[]>(request);
-	return response.body;
+		resourceUri: `/repos/${owner}/${repo}/assignees`,
+	});
+	return response;
 }
-export interface GithubRepository {
-	name: string;
-	owner: {
-		login: string;
-	};
+
+async function listIssueLabels(authProp: OAuth2PropertyValue, owner: string, repo: string) {
+
+	const response = await githubPaginatedApiCall<{ id: number; name: string }>({
+		accessToken: authProp.access_token,
+		method: HttpMethod.GET,
+		resourceUri: `/repos/${owner}/${repo}/labels`,
+	});
+	return response;
 }
-export interface GithubAssignee {
-	login: string;
-}
-export interface GithubIssueLabel {
-	id: string;
-	name: string;
-}
+
 export interface RepositoryProp {
 	repo: string;
 	owner: string;
+}
+
+export type RequestParams = Record<string, string | number | string[] | undefined>;
+
+export type GithubApiCallParams = {
+	accessToken: string;
+	method: HttpMethod;
+	resourceUri: string;
+	query?: RequestParams;
+	body?: any;
+};
+
+export async function githubApiCall<T extends HttpMessageBody>({
+	accessToken,
+	method,
+	resourceUri,
+	query,
+	body,
+}: GithubApiCallParams): Promise<HttpResponse<T>> {
+	const baseUrl = 'https://api.github.com';
+	const qs: QueryParams = {};
+
+	if (query) {
+		for (const [key, value] of Object.entries(query)) {
+			if (value !== null && value !== undefined) {
+				qs[key] = String(value);
+			}
+		}
+	}
+
+	const request: HttpRequest = {
+		method,
+		url: baseUrl + resourceUri,
+		authentication: {
+			type: AuthenticationType.BEARER_TOKEN,
+			token: accessToken,
+		},
+		queryParams: qs,
+		body,
+	};
+
+	const response = await httpClient.sendRequest<T>(request);
+	return response;
+}
+
+export async function githubPaginatedApiCall<T extends HttpMessageBody>({
+	accessToken,
+	method,
+	resourceUri,
+	query,
+	body,
+}: GithubApiCallParams): Promise<T[]> {
+	const qs = query ? query : {};
+
+	qs.page = 1;
+	qs.per_page = 100;
+
+	const resultData: T[] = [];
+	let hasMoreItems = true;
+
+	do {
+		const response = await githubApiCall<T[]>({
+			accessToken,
+			method,
+			resourceUri,
+			query: qs,
+			body,
+		});
+		qs.page = qs.page + 1;
+		resultData.push(...response.body);
+		const linkHeader = response.headers?.link;
+		hasMoreItems = !isNil(linkHeader) && linkHeader.includes(`rel="next"`);
+	} while (hasMoreItems);
+
+	return resultData;
 }

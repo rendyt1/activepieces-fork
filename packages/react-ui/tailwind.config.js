@@ -24,10 +24,17 @@ module.exports = {
       },
     },
     extend: {
+      width: {
+        '4.5': '1.125rem'
+      },
+      height: {
+        '4.5': '1.125rem',
+      },
       transitionDuration: {
         1500: '1500ms',
       },
       colors: {
+        'light-blue': 'hsl(var(--light-blue))',
         warning: {
           DEFAULT: 'hsl(var(--warning))',
           100: 'hsl(var(--warning-100))',
@@ -87,6 +94,11 @@ module.exports = {
       fontFamily: {
         sans: ['var(--font-sans)', ...fontFamily.sans],
       },
+      fontSize: {
+        'xss': '0.65rem',
+        '3xl': '1.75rem',
+        '4xl': '2rem',
+      },
       keyframes: {
         'accordion-down': {
           from: { height: '0' },
@@ -104,11 +116,34 @@ module.exports = {
             opacity: 1,
           },
         },
+        typing: {
+          "0%": {
+            width: "0%",
+            visibility: "hidden",
+          },
+          "100%": {
+            width: "100%",
+          }
+        },
+        'ask-ai-background':{
+         '0%': {
+          backgroundPosition: '0%'
+          },
+          '50%': {
+            backgroundPosition: '100%'
+          },
+          '100%': {
+            backgroundPosition: '0%'
+          }
+        }
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         fade: 'fade 0.2s ease-out',
+        typing: 'typing 0.7s steps(7) alternate',
+        'typing-sm': 'typing 0.5s steps(5) alternate',
+        'ask-ai-background' : 'ask-ai-background 4s ease-in-out infinite'
       },
       boxShadow: {
         'step-container': '0px 0px 22px hsl(var(--border) / 0.4)',

@@ -2,13 +2,21 @@ import { Static, Type } from '@sinclair/typebox'
 
 export const CreateTrialLicenseKeyRequestBody = Type.Object({
     email: Type.String(),
-    fullName: Type.String(),
     companyName: Type.String(),
     goal: Type.String(),
-    numberOfEmployees: Type.String(),
+    keyType: Type.Optional(Type.String()),
+    disabledFeatures: Type.Optional(Type.Array(Type.String())),
+    isEmbeddingsEnabled: Type.Optional(Type.Boolean()),
 })
 
 export type CreateTrialLicenseKeyRequestBody = Static<typeof CreateTrialLicenseKeyRequestBody>
+
+export const VerifyLicenseKeyRequestBody = Type.Object({
+    licenseKey: Type.String(),
+    platformId: Type.String(),
+})
+
+export type VerifyLicenseKeyRequestBody = Static<typeof VerifyLicenseKeyRequestBody>
 
 export const LicenseKeyEntity = Type.Object({
     id: Type.String(),
@@ -19,7 +27,7 @@ export const LicenseKeyEntity = Type.Object({
     isTrial: Type.Boolean(),
     key: Type.String(),
     ssoEnabled: Type.Boolean(),
-    gitSyncEnabled: Type.Boolean(),
+    environmentsEnabled: Type.Boolean(),
     showPoweredBy: Type.Boolean(),
     embeddingEnabled: Type.Boolean(),
     auditLogEnabled: Type.Boolean(),
@@ -32,8 +40,9 @@ export const LicenseKeyEntity = Type.Object({
     projectRolesEnabled: Type.Boolean(),
     flowIssuesEnabled: Type.Boolean(),
     alertsEnabled: Type.Boolean(),
-    premiumPieces: Type.Array(Type.String()),
     analyticsEnabled: Type.Boolean(),
+    globalConnectionsEnabled: Type.Boolean(),
+    customRolesEnabled: Type.Boolean(),
 })
 
 export type LicenseKeyEntity = Static<typeof LicenseKeyEntity>

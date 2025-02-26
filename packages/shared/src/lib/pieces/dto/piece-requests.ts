@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox'
+import { ApMultipartFile } from '../../common'
 import { ApEdition } from '../../flag/flag'
 import { PackageType, PieceCategory, PieceType } from '../piece'
 
@@ -90,25 +91,28 @@ export const PieceOptionRequest = Type.Object({
 export type PieceOptionRequest = Static<typeof PieceOptionRequest>
 
 export enum PieceScope {
-    PROJECT = 'PROJECT',
     PLATFORM = 'PLATFORM',
+    // TODO: all users have their own platform, so we can remove this
+    // @deprecated
+    PROJECT = 'PROJECT',
+
 }
 
 export const AddPieceRequestBody = Type.Union([
     Type.Object({
         packageType: Type.Literal(PackageType.ARCHIVE),
-        scope: Type.Enum(PieceScope),
+        scope: Type.Literal(PieceScope.PLATFORM),
         pieceName: Type.String({
             minLength: 1,
         }),
         pieceVersion: ExactVersionType,
-        pieceArchive: Type.Unknown(),
+        pieceArchive: ApMultipartFile,
     }, {
         title: 'Private Piece',
     }),
     Type.Object({
         packageType: Type.Literal(PackageType.REGISTRY),
-        scope: Type.Enum(PieceScope),
+        scope: Type.Literal(PieceScope.PLATFORM),
         pieceName: Type.String({
             minLength: 1,
         }),

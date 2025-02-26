@@ -3,11 +3,11 @@ import {
     DynamicPropsValue,
     PieceMetadata,
 } from '@activepieces/pieces-framework'
-import { logger } from '@activepieces/server-shared'
 import { ActivepiecesError, BeginExecuteFlowOperation, EngineResponseStatus, ErrorCode, ExecuteActionResponse, ExecuteExtractPieceMetadata, ExecutePropsOptions, ExecuteStepOperation, ExecuteTriggerOperation, ExecuteTriggerResponse, ExecuteValidateAuthOperation, ExecuteValidateAuthResponse, FlowRunResponse, FlowVersionState, ResumeExecuteFlowOperation, SourceCode, TriggerHookType } from '@activepieces/shared'
 import chalk from 'chalk'
+import { FastifyBaseLogger } from 'fastify'
 
-type EngineConstants = 'publicUrl' | 'internalApiUrl' | 'engineToken'
+type EngineConstants = 'publicApiUrl' | 'internalApiUrl' | 'engineToken'
 
 export type CodeArtifact = {
     name: string
@@ -71,6 +71,7 @@ export type EngineRunner = {
         operation: Omit<ExecuteTriggerOperation<T>, EngineConstants>,
     ): Promise<EngineHelperResponse<EngineHelperTriggerResult<T>>>
     extractPieceMetadata(
+        engineToken: string,
         operation: ExecuteExtractPieceMetadata,
     ): Promise<EngineHelperResponse<EngineHelperExtractPieceInformation>>
     executeValidateAuth(
@@ -87,21 +88,27 @@ export type EngineRunner = {
     ): Promise<EngineHelperResponse<EngineHelperPropResult>>
 }
 
-export const engineRunnerUtils = {
+export const engineRunnerUtils = (log: FastifyBaseLogger) => ({
     async readResults<Result extends EngineHelperResult>(sandboxResponse: ExecuteSandboxResult): Promise<EngineHelperResponse<Result>> {
 
 
         sandboxResponse.standardOutput.split('\n').forEach((f) => {
-            if (f.trim().length > 0) logger.debug({}, chalk.yellow(f))
+            if (f.trim().length > 0) log.debug({}, chalk.yellow(f))
         })
 
         sandboxResponse.standardError.split('\n').forEach((f) => {
-            if (f.trim().length > 0) logger.debug({}, chalk.red(f))
+            if (f.trim().length > 0) log.debug({}, chalk.red(f))
         })
 
         if (sandboxResponse.verdict === EngineResponseStatus.TIMEOUT) {
             throw new ActivepiecesError({
                 code: ErrorCode.EXECUTION_TIMEOUT,
+                params: {},
+            })
+        }
+        if (sandboxResponse.verdict === EngineResponseStatus.MEMORY_ISSUE) {
+            throw new ActivepiecesError({
+                code: ErrorCode.MEMORY_ISSUE,
                 params: {},
             })
         }
@@ -115,11 +122,11 @@ export const engineRunnerUtils = {
             standardOutput: sandboxResponse.standardOutput,
         }
 
-        logger.trace(response, '[EngineHelper#response] response')
+        log.trace(response, '[EngineHelper#response] response')
 
         return response
     },
-}
+})
 
 
 

@@ -6,20 +6,21 @@ import {
 } from '@activepieces/shared'
 import { FastifyInstance } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
+import { initializeDatabase } from '../../../../src/app/database'
 import { databaseConnection } from '../../../../src/app/database/database-connection'
 import { setupServer } from '../../../../src/app/server'
 import { generateMockToken } from '../../../helpers/auth'
 import {
     CLOUD_PLATFORM_ID,
     createMockTemplate,
-    createMockUser,
-    mockBasicSetup,
+    mockAndSaveBasicSetup,
+    mockBasicUser,
 } from '../../../helpers/mocks'
 
 let app: FastifyInstance | null = null
 
 beforeAll(async () => {
-    await databaseConnection().initialize()
+    await initializeDatabase({ runMigrations: false })
     app = await setupServer()
 })
 
@@ -142,7 +143,7 @@ describe('Flow Templates', () => {
 })
 
 async function createMockPlatformTemplate({ platformId }: { platformId: string }) {
-    const { mockOwner, mockPlatform, mockProject } = await mockBasicSetup({
+    const { mockOwner, mockPlatform, mockProject } = await mockAndSaveBasicSetup({
         platform: {
             id: platformId,
             manageTemplatesEnabled: true,
@@ -158,11 +159,11 @@ async function createMockPlatformTemplate({ platformId }: { platformId: string }
         .getRepository('flow_template')
         .save(mockPlatformTemplate)
 
-    const mockUser = createMockUser({
-        platformId: mockPlatform.id,
-        platformRole: PlatformRole.MEMBER,
+    const { mockUser } = await mockBasicUser({
+        user: {
+            platformId: mockPlatform.id,
+            platformRole: PlatformRole.MEMBER,
+        },
     })
-    await databaseConnection().getRepository('user').save(mockUser)
-
     return { mockOwner, mockUser, mockPlatform, mockProject, mockPlatformTemplate }
 }

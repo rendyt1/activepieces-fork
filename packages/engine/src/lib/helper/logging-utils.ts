@@ -4,9 +4,12 @@ import sizeof from 'object-sizeof'
 import PriorityQueue from 'priority-queue-typescript'
 
 const TRUNCATION_TEXT_PLACEHOLDER = '(truncated)'
-const MAX_SIZE_FOR_ALL_ENTRIES = 1024 * 1024
+const ERROR_OFFSET = 256 * 1024
+const DEFAULT_MAX_LOG_SIZE_FOR_TESTING = '10'
+const MAX_LOG_SIZE = Number(process.env.AP_MAX_FILE_SIZE_MB ?? DEFAULT_MAX_LOG_SIZE_FOR_TESTING) * 1024 * 1024
+const MAX_SIZE_FOR_ALL_ENTRIES = MAX_LOG_SIZE - ERROR_OFFSET
 const SIZE_OF_TRUNCATION_TEXT_PLACEHOLDER = sizeof(TRUNCATION_TEXT_PLACEHOLDER)
-const nonTruncatableKeys: Key[] = ['status', 'duration', 'type', 'errorMessage']
+const nonTruncatableKeys: Key[] = ['status', 'duration', 'type']
 
 export const loggingUtils = {
     async trimExecution(steps: Record<string, StepOutput>): Promise<Record<string, StepOutput>> {
@@ -37,9 +40,9 @@ function removeLeavesInTopologicalOrder(json: Record<string, unknown>): Record<s
             totalJsonSize += SIZE_OF_TRUNCATION_TEXT_PLACEHOLDER - curNode.size
 
             const parent = curNode.parent
-            
+
             parent.value[curNode.key] = TRUNCATION_TEXT_PLACEHOLDER
-            
+
             nodes[parent.index].numberOfChildren--
             if (nodes[parent.index].numberOfChildren == 0) {
                 leaves.add(nodes[parent.index])

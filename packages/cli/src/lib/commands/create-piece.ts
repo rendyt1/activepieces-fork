@@ -10,11 +10,11 @@ import {
   writePackageEslint,
   writeProjectJson,
 } from '../utils/files';
-import { findPieceSourceDirectory } from '../utils/piece-utils';
+import { findPiece } from '../utils/piece-utils';
 
 const validatePieceName = async (pieceName: string) => {
   console.log(chalk.yellow('Validating piece name....'));
-  const pieceNamePattern = /^[A-Za-z0-9-]+$/;
+  const pieceNamePattern = /^(?![._])[a-z0-9-]{1,214}$/;
   if (!pieceNamePattern.test(pieceName)) {
     console.log(
       chalk.red(
@@ -39,9 +39,9 @@ const validatePackageName = async (packageName: string) => {
 };
 
 const checkIfPieceExists = async (pieceName: string) => {
-  const path = await findPieceSourceDirectory(pieceName);
-  if (path) {
-    console.log(chalk.red(`🚨 Piece already exists at ${path}`));
+  const pieceFolder = await findPiece(pieceName);
+  if (pieceFolder) {
+    console.log(chalk.red(`🚨 Piece already exists at ${pieceFolder}`));
     process.exit(1);
   }
 };
@@ -92,11 +92,11 @@ const generateIndexTsFile = async (pieceName: string, pieceType: string) => {
 
   const indexTemplate = `
     import { createPiece, PieceAuth } from "@activepieces/pieces-framework";
-    
+
     export const ${pieceNameCamelCase} = createPiece({
       displayName: "${capitalizeFirstLetter(pieceName)}",
       auth: PieceAuth.None(),
-      minimumSupportedRelease: '0.20.0',
+      minimumSupportedRelease: '0.36.1',
       logoUrl: "https://cdn.activepieces.com/pieces/${pieceName}.png",
       authors: [],
       actions: [],

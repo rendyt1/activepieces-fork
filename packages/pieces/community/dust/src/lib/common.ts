@@ -89,7 +89,7 @@ export async function getConversationContent(
   let retries = 0;
   const maxRetries = timeout / 10;
   while (
-    !['succeeded', 'errored'].includes(
+    !['succeeded', 'failed'].includes(
       getConversationStatus(conversation.body)
     ) &&
     retries < maxRetries
@@ -100,14 +100,15 @@ export async function getConversationContent(
     retries += 1;
   }
 
-  if (getConversationStatus(conversation.body) != 'succeeded') {
+  const conversationStatus = getConversationStatus(conversation.body);
+  if (conversationStatus != 'succeeded') {
     if (retries >= maxRetries) {
       throw new Error(
-        `Could not load conversation after ${timeout}s - consider increasing timeout value`
+        `Could not load conversation ${conversationId} after ${timeout}s - ${conversationStatus} - consider increasing timeout value`
       );
     } else {
       throw new Error(
-        `Could not load conversation: ${
+        `Could not load conversation ${conversationId} - ${conversationStatus}: ${
           conversation.body['conversation']['content']?.at(-1)?.at(0)?.error
         }`
       );

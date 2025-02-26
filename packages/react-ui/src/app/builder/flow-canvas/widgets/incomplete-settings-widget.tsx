@@ -4,30 +4,40 @@ import React, { useMemo } from 'react';
 
 import { BuilderState } from '@/app/builder/builder-hooks';
 import { Button } from '@/components/ui/button';
-import { FlowVersion, flowHelper } from '@activepieces/shared';
+import {
+  Action,
+  FlowVersion,
+  Step,
+  flowStructureUtil,
+} from '@activepieces/shared';
 
-import { flowCanvasUtils } from '../flow-canvas-utils';
+import { flowCanvasUtils } from '../utils/flow-canvas-utils';
 
 type IncompleteSettingsButtonProps = {
   flowVersion: FlowVersion;
   selectStepByName: BuilderState['selectStepByName'];
 };
-
+const filterValidOrSkippedSteps = (step: Step) =>
+  (flowStructureUtil.isTrigger(step.type) && !step.valid) ||
+  (flowStructureUtil.isAction(step.type) &&
+    !(step as Action).skip &&
+    !step.valid);
 const IncompleteSettingsButton: React.FC<IncompleteSettingsButtonProps> = ({
   flowVersion,
   selectStepByName,
 }) => {
   const invalidSteps = useMemo(
     () =>
-      flowHelper.getAllSteps(flowVersion.trigger).filter((step) => !step.valid)
-        .length,
+      flowStructureUtil
+        .getAllSteps(flowVersion.trigger)
+        .filter(filterValidOrSkippedSteps).length,
     [flowVersion],
   );
   const { fitView } = useReactFlow();
   function onClick() {
-    const invalidSteps = flowHelper
+    const invalidSteps = flowStructureUtil
       .getAllSteps(flowVersion.trigger)
-      .filter((step) => !step.valid);
+      .filter(filterValidOrSkippedSteps);
     if (invalidSteps.length > 0) {
       selectStepByName(invalidSteps[0].name);
       fitView(
@@ -40,7 +50,7 @@ const IncompleteSettingsButton: React.FC<IncompleteSettingsButtonProps> = ({
     !flowVersion.valid && (
       <Button
         variant="ghost"
-        className="h-8 bg-warning-100 text-warning-300 hover:!bg-warning-100 hover:!border-warning hover:!text-warning-300 border border-solid border border-warning/50 rounded-full animate-fade"
+        className="h-8 bg-warning-100 text-warning-300 hover:!bg-warning-100 hover:!border-warning hover:!text-warning-300 border border-solid border-warning/50 rounded-full animate-fade"
         key={'complete-flow-button'}
         onClick={(e) => {
           onClick();
@@ -48,10 +58,7 @@ const IncompleteSettingsButton: React.FC<IncompleteSettingsButtonProps> = ({
           e.preventDefault();
         }}
       >
-        {t(
-          '{invalidSteps, plural, =0 {no incomplete steps} =1 {Complete 1 step} other {Complete # steps}}',
-          { invalidSteps: invalidSteps },
-        )}
+        {t('incompleteSteps', { invalidSteps: invalidSteps })}
       </Button>
     )
   );

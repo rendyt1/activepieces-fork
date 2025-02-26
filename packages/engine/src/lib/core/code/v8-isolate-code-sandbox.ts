@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 import { CodeModule, CodeSandbox } from '../../core/code/code-sandbox-common'
 
 const ONE_HUNDRED_TWENTY_EIGHT_MEGABYTES = 128
@@ -88,8 +87,13 @@ const executeIsolate = async ({ isolate, isolateContext, code }: ExecuteIsolateP
 }
 
 const serializeCodeModule = (codeModule: CodeModule): string => {
-    const serializedCodeFunction = codeModule.code.toString()
-    return `const code = ${serializedCodeFunction}; code(inputs);`
+    const serializedCodeFunction = Object.keys(codeModule)
+        .reduce((acc, key) => 
+            acc + `const ${key} = ${(codeModule as any)[key].toString()};`, 
+        '')
+
+    // replace the exports.function_name with function_name
+    return serializedCodeFunction.replace(/\(0, exports\.(\w+)\)/g, '$1') + 'code(inputs);'
 }
 
 type InitContextParams = {

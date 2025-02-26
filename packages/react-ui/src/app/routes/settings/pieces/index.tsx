@@ -1,18 +1,25 @@
 import { ColumnDef } from '@tanstack/react-table';
 import { t } from 'i18next';
 import { CheckIcon, Trash } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
+import { RequestTrial } from '@/app/components/request-trial';
 import { ConfirmationDeleteDialog } from '@/components/delete-dialog';
 import { Button } from '@/components/ui/button';
-import { DataTable, RowDataWithActions } from '@/components/ui/data-table';
-import { DataTableColumnHeader } from '@/components/ui/data-table-column-header';
-import { InstallPieceDialog } from '@/features/pieces/components/install-piece-dialog';
+import {
+  BulkAction,
+  DataTable,
+  RowDataWithActions,
+} from '@/components/ui/data-table';
+import { DataTableColumnHeader } from '@/components/ui/data-table/data-table-column-header';
+import { LockedAlert } from '@/components/ui/locked-alert';
 import { PieceIcon } from '@/features/pieces/components/piece-icon';
 import { piecesApi } from '@/features/pieces/lib/pieces-api';
-import { flagsHooks } from '@/hooks/flags-hooks';
+import { piecesHooks } from '@/features/pieces/lib/pieces-hook';
+import { platformHooks } from '@/hooks/platform-hooks';
 import { PieceMetadataModelSummary } from '@activepieces/pieces-framework';
-import { ApFlagId, isNil, PieceScope, PieceType } from '@activepieces/shared';
+import { isNil, PieceType } from '@activepieces/shared';
 
 import { TableTitle } from '../../../../components/ui/table-title';
 
@@ -99,64 +106,62 @@ const columns: ColumnDef<RowDataWithActions<PieceMetadataModelSummary>>[] = [
   },
 ];
 
-const fetchData = async ({ name }: { name: string }) => {
-  const pieces = await piecesApi.list({
-    searchQuery: name,
-    includeHidden: false,
+const ProjectPiecesPage = () => {
+  const { platform } = platformHooks.useCurrentPlatform();
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.get('name') ?? '';
+  const { pieces, isLoading, refetch } = piecesHooks.usePieces({
+    searchQuery,
   });
 
-  return {
-    data: pieces,
-    next: null,
-    previous: null,
-  };
-};
-
-const filters = [
-  {
-    type: 'input',
-    title: t('Piece Name'),
-    accessorKey: 'name',
-    options: [],
-    icon: CheckIcon,
-  } as const,
-];
-const ProjectPiecesPage = () => {
-  const [refresh, setRefresh] = useState(0);
-
-  const { data: installPiecesEnabled } = flagsHooks.useFlag<boolean>(
-    ApFlagId.INSTALL_PROJECT_PIECES_ENABLED,
-  );
-
-  const { data: managedPiecesEnabled } = flagsHooks.useFlag<boolean>(
-    ApFlagId.MANAGE_PROJECT_PIECES_ENABLED,
+  const bulkActions: BulkAction<PieceMetadataModelSummary>[] = useMemo(
+    () => [
+      {
+        render: () => {
+          return <ManagePiecesDialog onSuccess={() => refetch()} />;
+        },
+      },
+    ],
+    [refetch],
   );
 
   return (
     <div className="flex w-full flex-col items-center justify-center gap-4">
       <div className="mx-auto w-full flex-col">
-        <div className="mb-4 flex">
-          <TableTitle>{t('Pieces')}</TableTitle>
-          <div className="ml-auto">
-            {installPiecesEnabled && (
-              <InstallPieceDialog
-                onInstallPiece={() => setRefresh(refresh + 1)}
-                scope={PieceScope.PROJECT}
-              />
+        {!platform.managePiecesEnabled && (
+          <LockedAlert
+            title={t('Control Pieces')}
+            description={t(
+              "Show the pieces that matter most to your users and hide the ones you don't like.",
             )}
-          </div>
-        </div>
-        <div className="flex justify-end">
-          {managedPiecesEnabled && (
-            <ManagePiecesDialog onSuccess={() => setRefresh(refresh + 1)} />
-          )}
-        </div>
+            button={
+              <RequestTrial
+                featureKey="ENTERPRISE_PIECES"
+                buttonVariant="outline-primary"
+              />
+            }
+          />
+        )}
+        <TableTitle>{t('Pieces')}</TableTitle>
         <DataTable
           columns={columns}
-          filters={filters}
-          refresh={refresh}
-          fetchData={(filterParams) => fetchData(filterParams)}
+          filters={[
+            {
+              type: 'input',
+              title: t('Piece Name'),
+              accessorKey: 'name',
+              options: [],
+              icon: CheckIcon,
+            } as const,
+          ]}
+          page={{
+            data: pieces ?? [],
+            next: null,
+            previous: null,
+          }}
+          isLoading={isLoading}
           hidePagination={true}
+          bulkActions={platform.managePiecesEnabled ? bulkActions : []}
         />
       </div>
     </div>

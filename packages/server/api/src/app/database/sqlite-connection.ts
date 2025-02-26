@@ -1,8 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
-import { AppSystemProp, SharedSystemProp, system } from '@activepieces/server-shared'
+import { AppSystemProp } from '@activepieces/server-shared'
 import { ApEdition, ApEnvironment } from '@activepieces/shared'
 import { DataSource, MigrationInterface } from 'typeorm'
+import { system } from '../helper/system/system'
 import { commonProperties } from './database-connection'
 import { AddPieceTypeAndPackageTypeToFlowVersion1696245170061 } from './migration/common/1696245170061-add-piece-type-and-package-type-to-flow-version'
 import { StoreCodeInsideFlow1697969398200 } from './migration/common/1697969398200-store-code-inside-flow'
@@ -14,6 +15,10 @@ import { RemoveShowActivityLog1716105958530 } from './migration/common/171610595
 import { AddDurationForRuns1716725027424 } from './migration/common/1716725027424-AddDurationForRuns'
 import { ChangeEventRoutingConstraint1723549873495 } from './migration/common/1723549873495-ChangeEventRoutingConstraint'
 import { RemoveUniqueConstraintOnStepFile1725570317713 } from './migration/common/1725570317713-RemoveUniqueConstraintOnStepFile'
+import { AddUserSessionId1727130193726 } from './migration/common/1727130193726-AddUserSessionId'
+import { AddLicenseKeyIntoPlatform1728827704109 } from './migration/common/1728827704109-AddLicenseKeyIntoPlatform'
+import { ChangeProjectUniqueConstraintToPartialIndex1729098769827 } from './migration/common/1729098769827-ChangeProjectUniqueConstraintToPartialIndex'
+import { SwitchToRouter1731019013340 } from './migration/common/1731019013340-switch-to-router'
 import { InitialSql3Migration1690195839899 } from './migration/sqlite/1690195839899-InitialSql3Migration'
 import { AddAppConnectionTypeToTopLevel1691706020626 } from './migration/sqlite/1691706020626-add-app-connection-type-to-top-level'
 import { AddTagsToRunSqlite1692056190942 } from './migration/sqlite/1692056190942-AddTagsToRunSqlite'
@@ -57,7 +62,25 @@ import { LogFileRelationWithFlowRunSqlite1725637505836 } from './migration/sqlit
 import { AddLogsFileIdIndexSqlite1725699920020 } from './migration/sqlite/1725699920020-AddLogsFileIdIndexSqlite'
 import { SupportS3FilesSqlite1726363932745 } from './migration/sqlite/1726363932745-SupportS3FilesSqlite'
 import { AddAiProviderSqlite1726446345221 } from './migration/sqlite/1726446345221-AddAiProviderSqlite'
-
+import { RemovePremiumPiecesSqlite1727865697005 } from './migration/sqlite/1727865697005-RemovePremiumPiecesSqlite'
+import { UpdatePlaformInSqlite1729330108485 } from './migration/sqlite/1729330108485-UpdatePlaformInSqlite'
+import { MigrateSMTPInPlatformSqlite1729601402320 } from './migration/sqlite/1729601402320-MigrateSMTPInPlatformSqlite'
+import { AddPinnedPiecesSqlite1729774033945 } from './migration/sqlite/1729774033945-AddPinnedPiecesSqlite'
+import { AddConnectionOwnerSqlite1730121414658 } from './migration/sqlite/1730121414658-AddConnectionOwnerSqlite'
+import { AppConnectionsSetNullSqlite1730627777709 } from './migration/sqlite/1730627777709-AppConnectionsSetNullSqlite'
+import { AddFlowSchemaVersionSqlite1730760312426 } from './migration/sqlite/1730760312426-AddFlowSchemaVersionSqlite'
+import { StoreTriggerEventsInFileSqlite1731247180217 } from './migration/sqlite/1731247180217-StoreTriggerEventsInFileSqlite'
+import { MigrateConnectionNamesSqlite1731443310900 } from './migration/sqlite/1731443310900-MigrateConnectionNamesSqlite'
+import { AddGlobalConnectionsAndRbacForPlatformSqlite1731604290560 } from './migration/sqlite/1731604290560-AddGlobalConnectionsAndRbacForPlatformSqlite'
+import { AddIndiciesToTriggerEventSqlite1732324359348 } from './migration/sqlite/1732324359348-AddIndiciesToTriggerEventSqlite'
+import { AddIndiciesToRunSqlite1732324481815 } from './migration/sqlite/1732324481815-AddIndiciesToRunSqlite'
+import { CreateProjectRoleTableSqlite1732482844483 } from './migration/sqlite/1732482844483-CreateProjectRoleTableSqlite'
+import { AddProjectRelationInUserInvitationSqlite1732791068873 } from './migration/sqlite/1732791068873-AddProjectRelationInUserInvitationSqlite'
+import { RemoveWorkerTypeSqlite1734439194575 } from './migration/sqlite/1734439194575-RemoveWorkerTypeSqlite'
+import { AddCopilotSettingsSqlite1734479435668 } from './migration/sqlite/1734479435668-AddCopilotSettingsSqlite'
+import { AddExternalIdForFlowSqlite1735262810939 } from './migration/sqlite/1735262810939-AddExternalIdForFlowSqlite'
+import { AddUserIdentitySqlite1735602676499 } from './migration/sqlite/1735602676499-AddUserIdentitySqlite'
+import { RestrictPiecesSqlite1739544872722 } from './migration/sqlite/1739544872722-RestrictPiecesSqlite'
 const getSqliteDatabaseFilePath = (): string => {
     const apConfigDirectoryPath = system.getOrThrow(AppSystemProp.CONFIG_PATH)
     mkdirSync(apConfigDirectoryPath, { recursive: true })
@@ -69,7 +92,7 @@ const getSqliteDatabaseInMemory = (): string => {
 }
 
 const getSqliteDatabase = (): string => {
-    const env = system.getOrThrow<ApEnvironment>(SharedSystemProp.ENVIRONMENT)
+    const env = system.getOrThrow<ApEnvironment>(AppSystemProp.ENVIRONMENT)
 
     if (env === ApEnvironment.TESTING) {
         return getSqliteDatabaseInMemory()
@@ -132,6 +155,29 @@ const getMigrations = (): (new () => MigrationInterface)[] => {
         AddLogsFileIdIndexSqlite1725699920020,
         AddAiProviderSqlite1726446345221,
         SupportS3FilesSqlite1726363932745,
+        AddUserSessionId1727130193726,
+        RemovePremiumPiecesSqlite1727865697005,
+        AddLicenseKeyIntoPlatform1728827704109,
+        UpdatePlaformInSqlite1729330108485,
+        ChangeProjectUniqueConstraintToPartialIndex1729098769827,
+        MigrateSMTPInPlatformSqlite1729601402320,
+        AddPinnedPiecesSqlite1729774033945,
+        AddConnectionOwnerSqlite1730121414658,
+        AppConnectionsSetNullSqlite1730627777709,
+        AddFlowSchemaVersionSqlite1730760312426,
+        SwitchToRouter1731019013340,
+        StoreTriggerEventsInFileSqlite1731247180217,
+        CreateProjectRoleTableSqlite1732482844483,
+        MigrateConnectionNamesSqlite1731443310900,
+        AddGlobalConnectionsAndRbacForPlatformSqlite1731604290560,
+        AddIndiciesToTriggerEventSqlite1732324359348,
+        AddIndiciesToRunSqlite1732324481815,
+        AddProjectRelationInUserInvitationSqlite1732791068873,
+        RemoveWorkerTypeSqlite1734439194575,
+        AddCopilotSettingsSqlite1734479435668,
+        AddExternalIdForFlowSqlite1735262810939,
+        AddUserIdentitySqlite1735602676499,
+        RestrictPiecesSqlite1739544872722,
     ]
     const edition = system.getEdition()
     if (edition !== ApEdition.COMMUNITY) {
@@ -141,7 +187,7 @@ const getMigrations = (): (new () => MigrationInterface)[] => {
 }
 
 const getMigrationConfig = (): MigrationConfig => {
-    const env = system.getOrThrow<ApEnvironment>(SharedSystemProp.ENVIRONMENT)
+    const env = system.getOrThrow<ApEnvironment>(AppSystemProp.ENVIRONMENT)
 
     if (env === ApEnvironment.TESTING) {
         return {}

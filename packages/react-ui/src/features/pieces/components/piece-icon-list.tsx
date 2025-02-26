@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 import { t } from 'i18next';
 
-import { flowHelper, Trigger } from '@activepieces/shared';
+import { Trigger, flowStructureUtil } from '@activepieces/shared';
 
 import {
   Tooltip,
@@ -38,14 +38,17 @@ export function PieceIconList({
   maxNumberOfIconsToShow: number;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
 }) {
-  const steps = flowHelper.getAllSteps(trigger);
+  const steps = flowStructureUtil.getAllSteps(trigger);
   const stepsMetadata: StepMetadata[] = piecesHooks
     .useStepsMetadata(steps)
     .map((data) => data.data)
     .filter((data) => !!data) as StepMetadata[];
 
   const uniqueMetadata: StepMetadata[] = stepsMetadata.filter(
-    (item, index, self) => self.indexOf(item) === index,
+    (item, index, self) =>
+      self.findIndex(
+        (secondItem) => item.displayName === secondItem.displayName,
+      ) === index,
   );
   const visibleMetadata = uniqueMetadata.slice(0, maxNumberOfIconsToShow);
   const extraPieces = uniqueMetadata.length - visibleMetadata.length;
@@ -54,7 +57,7 @@ export function PieceIconList({
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex gap-2">
-          {visibleMetadata.map((metadata, index) => (
+          {visibleMetadata.map((metadata) => (
             <PieceIcon
               logoUrl={metadata.logoUrl}
               showTooltip={false}
@@ -62,7 +65,7 @@ export function PieceIconList({
               size={size ?? 'md'}
               border={true}
               displayName={metadata.displayName}
-              key={index}
+              key={metadata.logoUrl}
             />
           ))}
           {extraPieces > 0 && (

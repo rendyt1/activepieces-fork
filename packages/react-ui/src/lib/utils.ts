@@ -4,7 +4,9 @@ import dayjs from 'dayjs';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { twMerge } from 'tailwind-merge';
 
-import { ActionType, TriggerType, LocalesEnum } from '@activepieces/shared';
+import { LocalesEnum, Permission } from '@activepieces/shared';
+
+import { authenticationSession } from './authentication-session';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,26 +16,8 @@ const emailRegex =
 
 export const formatUtils = {
   emailRegex,
-  formatStepInputOrOutput(
-    sampleData: unknown,
-    type: ActionType | TriggerType | null,
-  ) {
-    const cleanedSampleData =
-      typeof sampleData === 'object'
-        ? JSON.parse(JSON.stringify(sampleData))
-        : sampleData;
-    const shouldRemoveIterations =
-      type === ActionType.LOOP_ON_ITEMS &&
-      cleanedSampleData &&
-      typeof cleanedSampleData === 'object' &&
-      'iterations' in cleanedSampleData;
-    if (shouldRemoveIterations) {
-      delete cleanedSampleData['iterations'];
-    }
-    return cleanedSampleData;
-  },
   convertEnumToHumanReadable(str: string) {
-    const words = str.split('_');
+    const words = str.split(/[_.]/);
     return words
       .map(
         (word) =>
@@ -43,6 +27,13 @@ export const formatUtils = {
   },
   formatNumber(number: number) {
     return new Intl.NumberFormat('en-US').format(number);
+  },
+  formatDateOnly(date: Date) {
+    return Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(date);
   },
   formatDate(date: Date) {
     const now = dayjs();
@@ -71,6 +62,28 @@ export const formatUtils = {
       }).format(date);
     }
   },
+  formatDateToAgo(date: Date) {
+    const now = dayjs();
+    const inputDate = dayjs(date);
+    const diffInSeconds = now.diff(inputDate, 'second');
+    const diffInMinutes = now.diff(inputDate, 'minute');
+    const diffInHours = now.diff(inputDate, 'hour');
+    const diffInDays = now.diff(inputDate, 'day');
+
+    if (diffInSeconds < 60) {
+      return `${diffInSeconds}s ago`;
+    }
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes}m ago`;
+    }
+    if (diffInHours < 24) {
+      return `${diffInHours}h ago`;
+    }
+    if (diffInDays < 30) {
+      return `${diffInDays}d ago`;
+    }
+    return inputDate.format('MMM D, YYYY');
+  },
   formatDuration(durationMs: number | undefined, short?: boolean): string {
     if (durationMs === undefined) {
       return '-';
@@ -98,7 +111,6 @@ export const formatUtils = {
             remainingSeconds > 0 ? ` ${remainingSeconds} seconds` : ''
           }`;
     }
-
     return short ? `${seconds} s` : `${seconds} seconds`;
   },
 };
@@ -167,7 +179,7 @@ export const useElementSize = (ref: RefObject<HTMLElement>) => {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [ref, setSize]);
+  }, [ref.current]);
 
   return size;
 };
@@ -179,3 +191,52 @@ export const isStepFileUrl = (json: unknown): json is string => {
     (json.includes('/api/v1/step-files/') || json.includes('file://'))
   );
 };
+
+export const useTimeAgo = (date: Date) => {
+  const [timeAgo, setTimeAgo] = useState(() =>
+    formatUtils.formatDateToAgo(date),
+  );
+
+  useEffect(() => {
+    const updateInterval = () => {
+      const now = dayjs();
+      const inputDate = dayjs(date);
+      const diffInSeconds = now.diff(inputDate, 'second');
+
+      // Update every second if less than a minute
+      // Update every minute if less than an hour
+      // Update every hour if less than a day
+      // Update every day if more than a day
+      if (diffInSeconds < 60) return 1000;
+      if (diffInSeconds < 3600) return 60000;
+      if (diffInSeconds < 86400) return 3600000;
+      return 86400000;
+    };
+
+    const intervalId = setInterval(() => {
+      setTimeAgo(formatUtils.formatDateToAgo(date));
+    }, updateInterval());
+
+    return () => clearInterval(intervalId);
+  }, [date]);
+
+  return timeAgo;
+};
+
+export const determineDefaultRoute = (
+  checkAccess: (permission: Permission) => boolean,
+) => {
+  if (checkAccess(Permission.READ_FLOW)) {
+    return authenticationSession.appendProjectRoutePrefix('/flows');
+  }
+  if (checkAccess(Permission.READ_RUN)) {
+    return authenticationSession.appendProjectRoutePrefix('/runs');
+  }
+  if (checkAccess(Permission.READ_ISSUES)) {
+    return authenticationSession.appendProjectRoutePrefix('/issues');
+  }
+  return authenticationSession.appendProjectRoutePrefix('/settings');
+};
+
+export const NEW_FLOW_QUERY_PARAM = 'newFlow';
+export const parentWindow = window.opener ?? window.parent;

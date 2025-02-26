@@ -1,6 +1,7 @@
 import { ApplicationEventName } from '@activepieces/ee-shared'
-import { AnalyticsPieceReportItem, AnalyticsProjectReportItem, AnalyticsReportResponse, flowHelper, FlowStatus, PieceCategory, PlatformId, PopulatedFlow, ProjectId } from '@activepieces/shared'
+import { AnalyticsPieceReportItem, AnalyticsProjectReportItem, AnalyticsReportResponse, flowPieceUtil, FlowStatus, PieceCategory, PlatformId, PopulatedFlow, ProjectId } from '@activepieces/shared'
 import dayjs from 'dayjs'
+import { FastifyBaseLogger } from 'fastify'
 import { In, MoreThan } from 'typeorm'
 import { auditLogRepo } from '../../ee/audit-logs/audit-event-service'
 import { flowRepo } from '../../flows/flow/flow.repo'
@@ -10,16 +11,16 @@ import { pieceMetadataService } from '../../pieces/piece-metadata-service'
 import { projectRepo } from '../../project/project-service'
 import { userRepo } from '../../user/user-service'
 
-export const analyticsService = {
+export const analyticsService = (log: FastifyBaseLogger) => ({
     generateReport: async (platformId: PlatformId): Promise<AnalyticsReportResponse> => {
-        const flows = await listAllFlows(platformId, undefined)
+        const flows = await listAllFlows(log, platformId, undefined)
         const activeFlows = countFlows(flows, FlowStatus.ENABLED)
         const totalFlows = countFlows(flows, undefined)
         const totalProjects = await countProjects(platformId)
         const { totalUsers, activeUsers } = await analyzeUsers(platformId)
         const tasksUsage = await tasksReport(platformId)
-        const { uniquePiecesUsed, topPieces } = await analyzePieces(flows)
-        const activeFlowsWithAI = await numberOfFlowsWithAI(flows)
+        const { uniquePiecesUsed, topPieces } = await analyzePieces(log, flows, platformId)
+        const activeFlowsWithAI = await numberOfFlowsWithAI(log, flows, platformId)
         const { topProjects, activeProjects } = await analyzeProjects(flows)
         return {
             totalUsers,
@@ -35,7 +36,7 @@ export const analyticsService = {
             topPieces,
         }
     },
-}
+})
 
 
 async function analyzeProjects(flows: PopulatedFlow[]) {
@@ -63,13 +64,14 @@ async function analyzeProjects(flows: PopulatedFlow[]) {
 }
 
 
-async function numberOfFlowsWithAI(flows: PopulatedFlow[]) {
+async function numberOfFlowsWithAI(log: FastifyBaseLogger, flows: PopulatedFlow[], platformId: PlatformId) {
     const aiPiecePromises = flows.flatMap(flow => {
-        const usedPieces = flowHelper.getUsedPieces(flow.version.trigger)
-        return usedPieces.map(piece => pieceMetadataService.getOrThrow({
+        const usedPieces = flowPieceUtil.getUsedPieces(flow.version.trigger)
+        return usedPieces.map(piece => pieceMetadataService(log).getOrThrow({
             name: piece,
             version: undefined,
             projectId: flow.projectId,
+            platformId,
             entityManager: undefined,
         }))
     })
@@ -77,16 +79,17 @@ async function numberOfFlowsWithAI(flows: PopulatedFlow[]) {
     return pieceMetadataList.filter(pieceMetadata => pieceMetadata.categories?.includes(PieceCategory.ARTIFICIAL_INTELLIGENCE)).length
 }
 
-async function analyzePieces(flows: PopulatedFlow[]) {
+async function analyzePieces(log: FastifyBaseLogger, flows: PopulatedFlow[], platformId: PlatformId) {
     const pieces: Record<string, AnalyticsPieceReportItem> = {}
     for (const flow of flows) {
-        const usedPieces = flowHelper.getUsedPieces(flow.version.trigger)
+        const usedPieces = flowPieceUtil.getUsedPieces(flow.version.trigger)
         for (const piece of usedPieces) {
             if (!pieces[piece]) {
-                const pieceMetadata = await pieceMetadataService.getOrThrow({
+                const pieceMetadata = await pieceMetadataService(log).getOrThrow({
                     name: piece,
                     version: undefined,
                     projectId: flow.projectId,
+                    platformId,
                     entityManager: undefined,
                 })
                 pieces[piece] = {
@@ -151,7 +154,7 @@ async function tasksReport(platformId: PlatformId) {
     return tasks.map(({ day, total_tasks }) => ({ day, totalTasks: total_tasks }))
 }
 
-async function listAllFlows(platformId: PlatformId, projectId: ProjectId | undefined): Promise<PopulatedFlow[]> {
+async function listAllFlows(log: FastifyBaseLogger, platformId: PlatformId, projectId: ProjectId | undefined): Promise<PopulatedFlow[]> {
     const queryBuilder = flowRepo().createQueryBuilder('flow')
         .select(['flow.id AS flow_id', 'flow."projectId" AS project_id'])
         .innerJoin('project', 'project', 'flow."projectId" = project.id')
@@ -160,7 +163,7 @@ async function listAllFlows(platformId: PlatformId, projectId: ProjectId | undef
         queryBuilder.andWhere('flow."projectId" = :projectId', { projectId })
     }
     const flowToGrab = await queryBuilder.getRawMany()
-    return Promise.all(flowToGrab.map(({ flow_id, project_id }) => flowService.getOnePopulatedOrThrow({
+    return Promise.all(flowToGrab.map(({ flow_id, project_id }) => flowService(log).getOnePopulatedOrThrow({
         id: flow_id,
         projectId: project_id,
         versionId: undefined,

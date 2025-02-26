@@ -3,7 +3,12 @@ import {
   TriggerStrategy,
   createTrigger,
 } from '@activepieces/pieces-framework';
-import { USE_DRAFT_QUERY_PARAM_NAME } from '@activepieces/shared';
+import {
+  createKeyForFormInput,
+  MarkdownVariant,
+  USE_DRAFT_QUERY_PARAM_NAME,
+} from '@activepieces/shared';
+
 
 const markdown = `**Published Form URL:**
 \`\`\`text
@@ -16,22 +21,47 @@ Use this for production, views the published version of the form.
 \`\`\`text
 {{formUrl}}?${USE_DRAFT_QUERY_PARAM_NAME}=true
 \`\`\`
-Use this to generate sample data, views the draft version of the from.
+Use this to generate sample data, views the draft version of the form (the one you are editing now).
+`;
+const responseMarkdown = `
+If **Wait for Response** is enabled, use **Respond on UI** in your flow to provide a response back to the form.
 `;
 
-export const onFormSubmission = createTrigger({
+type FormInput = {
+  displayName: string;
+  type: 'text' | 'text_area' | 'file' | 'toggle';
+  description?: string;
+  required: boolean;
+};
 
+const parseBoolean = (value: unknown, fieldName: string): boolean => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const lowerValue = value.toLowerCase();
+    if (lowerValue === 'true' || lowerValue === 'false') {
+      return lowerValue === 'true';
+    }
+  }
+  throw new Error(`Field ${fieldName} must be a boolean or 'true'/'false' string`);
+};
+
+export const onFormSubmission = createTrigger({
   name: 'form_submission',
-  displayName: 'On Form Submission',
+  displayName: 'Web Form',
   description: 'Trigger the flow by submitting a form.',
   props: {
     about: Property.MarkDown({
       value: markdown,
+      variant: MarkdownVariant.BORDERLESS,
+    }),
+    response: Property.MarkDown({
+      value: responseMarkdown,
+      variant: MarkdownVariant.WARNING,
     }),
     waitForResponse: Property.Checkbox({
       displayName: 'Wait for Response',
-      description:
-        'If enabled, the form will return the flow output to the frontend. Make sure to use the Return Response action to return a response.',
       defaultValue: false,
       required: true,
     }),
@@ -75,6 +105,26 @@ export const onFormSubmission = createTrigger({
     return;
   },
   async run(context) {
-    return [context.payload.body];
+    const payload = context.payload.body as Record<string, unknown>;
+    const inputs = context.propsValue.inputs as FormInput[];
+
+    const processedPayload: Record<string, unknown> = {};
+    for (const input of inputs) {
+      const key = createKeyForFormInput(input.displayName);
+      const value = payload[key];
+
+      switch (input.type) {
+        case 'toggle':
+          processedPayload[key] = parseBoolean(value, input.displayName);
+          break;
+        case 'text':
+        case 'text_area':
+        case 'file':
+          processedPayload[key] = value;
+          break;
+      }
+    }
+
+    return [processedPayload];
   },
 });

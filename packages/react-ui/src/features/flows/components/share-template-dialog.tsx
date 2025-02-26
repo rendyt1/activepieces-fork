@@ -19,7 +19,9 @@ import { Label } from '@/components/ui/label';
 import { INTERNAL_ERROR_TOAST, toast } from '@/components/ui/use-toast';
 import { flowsApi } from '@/features/flows/lib/flows-api';
 import { templatesApi } from '@/features/templates/lib/templates-api';
-import { FlowTemplate, FlowVersion, TemplateType } from '@activepieces/shared';
+import { FlowTemplate, TemplateType } from '@activepieces/shared';
+
+import { useNewWindow } from '../../../components/embed-provider';
 
 const ShareTemplateSchema = Type.Object({
   description: Type.String(),
@@ -32,13 +34,13 @@ type ShareTemplateSchema = Static<typeof ShareTemplateSchema>;
 const ShareTemplateDialog: React.FC<{
   children: React.ReactNode;
   flowId: string;
-  flowVersion: FlowVersion;
-}> = ({ children, flowId, flowVersion }) => {
+  flowVersionId: string;
+}> = ({ children, flowId, flowVersionId }) => {
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const shareTemplateForm = useForm<ShareTemplateSchema>({
     resolver: typeboxResolver(ShareTemplateSchema),
   });
-
+  const openNewIndow = useNewWindow();
   const { mutate, isPending } = useMutation<
     FlowTemplate,
     Error,
@@ -46,11 +48,11 @@ const ShareTemplateDialog: React.FC<{
   >({
     mutationFn: async () => {
       const template = await flowsApi.getTemplate(flowId, {
-        versionId: flowVersion.id,
+        versionId: flowVersionId,
       });
 
       const flowTemplate = await templatesApi.create({
-        template: flowVersion,
+        template: template.template,
         type: TemplateType.PROJECT,
         blogUrl: template.blogUrl,
         tags: template.tags,
@@ -60,7 +62,7 @@ const ShareTemplateDialog: React.FC<{
       return flowTemplate;
     },
     onSuccess: (data) => {
-      window.open(`/templates/${data.id}`, '_blank', 'noopener');
+      openNewIndow(`/templates/${data.id}`);
       setIsShareDialogOpen(false);
     },
     onError: () => toast(INTERNAL_ERROR_TOAST),

@@ -1,5 +1,4 @@
 import { useMutation } from '@tanstack/react-query';
-import { HttpStatusCode } from 'axios';
 import { t } from 'i18next';
 import { useMemo, useRef, useState } from 'react';
 import { SubmitHandler, useForm } from 'react-hook-form';
@@ -33,6 +32,8 @@ import {
   ApEdition,
   ApFlagId,
   AuthenticationResponse,
+  ErrorCode,
+  isNil,
   SignUpRequest,
 } from '@activepieces/shared';
 
@@ -69,7 +70,7 @@ const SignUpForm = ({
     },
   });
   const websiteName = flagsHooks.useWebsiteBranding()?.websiteName;
-  const edition = flagsHooks.useFlag<ApEdition>(ApFlagId.EDITION).data;
+  const { data: edition } = flagsHooks.useFlag<ApEdition>(ApFlagId.EDITION);
   const showNewsLetterCheckbox = useMemo(() => {
     if (!edition || !websiteName) {
       return false;
@@ -111,8 +112,21 @@ const SignUpForm = ({
     },
     onError: (error) => {
       if (api.isError(error)) {
-        switch (error.response?.status) {
-          case HttpStatusCode.Forbidden: {
+        const errorCode: ErrorCode | undefined = (
+          error.response?.data as { code: ErrorCode }
+        )?.code;
+        if (isNil(errorCode)) {
+          form.setError('root.serverError', {
+            message: t('Something went wrong, please try again later'),
+          });
+          return;
+        }
+        switch (errorCode) {
+          case ErrorCode.EMAIL_IS_NOT_VERIFIED: {
+            setShowCheckYourEmailNote(true);
+            break;
+          }
+          case ErrorCode.INVITATION_ONLY_SIGN_UP: {
             form.setError('root.serverError', {
               message: t(
                 'Sign up is restricted. You need an invitation to join. Please contact the administrator.',
@@ -120,9 +134,21 @@ const SignUpForm = ({
             });
             break;
           }
-          case HttpStatusCode.Conflict: {
+          case ErrorCode.EXISTING_USER: {
             form.setError('root.serverError', {
               message: t('Email is already used'),
+            });
+            break;
+          }
+          case ErrorCode.EMAIL_AUTH_DISABLED: {
+            form.setError('root.serverError', {
+              message: t('Email authentication is disabled'),
+            });
+            break;
+          }
+          case ErrorCode.DOMAIN_NOT_ALLOWED: {
+            form.setError('root.serverError', {
+              message: t('Email domain is disallowed'),
             });
             break;
           }
@@ -133,7 +159,6 @@ const SignUpForm = ({
             break;
           }
         }
-        return;
       }
     },
   });

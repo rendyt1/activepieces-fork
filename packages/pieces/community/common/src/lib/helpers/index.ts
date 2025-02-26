@@ -1,39 +1,92 @@
-import { OAuth2PropertyValue, PieceAuthProperty, Property, StaticDropdownProperty, createAction } from "@activepieces/pieces-framework";
-import { HttpError, HttpHeaders, HttpMethod, HttpRequest, QueryParams, httpClient } from "../http";
-import { assertNotNullOrUndefined } from "@activepieces/shared";
+import {
+  OAuth2PropertyValue,
+  PieceAuthProperty,
+  Property,
+  StaticDropdownProperty,
+  createAction,
+  StaticPropsValue,
+  InputPropertyMap,
+} from '@activepieces/pieces-framework';
+import {
+  HttpError,
+  HttpHeaders,
+  HttpMethod,
+  HttpRequest,
+  QueryParams,
+  httpClient,
+} from '../http';
+import { assertNotNullOrUndefined } from '@activepieces/shared';
 
-export const getAccessTokenOrThrow = (auth: OAuth2PropertyValue | undefined): string => {
+export const getAccessTokenOrThrow = (
+  auth: OAuth2PropertyValue | undefined
+): string => {
   const accessToken = auth?.access_token;
 
   if (accessToken === undefined) {
-    throw new Error("Invalid bearer token");
+    throw new Error('Invalid bearer token');
   }
 
   return accessToken;
 };
+const joinBaseUrlWithRelativePath = ({ baseUrl, relativePath }: { baseUrl: string, relativePath: string }) => {
+  const baseUrlWithSlash = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+  const relativePathWithoutSlash = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath
+  return `${baseUrlWithSlash}${relativePathWithoutSlash}`
+ }
+ 
 
-export function createCustomApiCallAction({ auth, baseUrl, authMapping, description, displayName, name, props }: {
-  auth?: PieceAuthProperty,
-  baseUrl: (auth?: unknown) => string,
-  authMapping?: (auth: unknown) => Promise<HttpHeaders>,
-  //   add description as a parameter that can be null
-  description?: string | null,
-  displayName?: string | null,
-  name?: string | null,
-  props?: {
-    url?: Partial<ReturnType<typeof Property.ShortText>>,
-    method?: Partial<StaticDropdownProperty<HttpMethod, boolean>>,
-    headers?: Partial<ReturnType<typeof Property.Object>>,
-    queryParams?: Partial<ReturnType<typeof Property.Object>>,
-    body?: Partial<ReturnType<typeof Property.Json>>,
-    failsafe?: Partial<ReturnType<typeof Property.Checkbox>>,
-    timeout?: Partial<ReturnType<typeof Property.Number>>,
+const getBaseUrlForDescription = (baseUrl: (auth?: unknown) => string,auth?: unknown) => {
+  const exampleBaseUrl = `https://api.example.com`
+  try {
+    const baseUrlValue = auth ? baseUrl(auth) : undefined;
+    const baseUrlValueWithoutTrailingSlash = baseUrlValue?.endsWith('/') ? baseUrlValue.slice(0, -1) : baseUrlValue
+    return baseUrlValueWithoutTrailingSlash ?? exampleBaseUrl
   }
+  //If baseUrl fails we stil want to return a valid baseUrl for description
+  catch (error) {
+  {
+    return exampleBaseUrl
+  }
+}
+}
+export function createCustomApiCallAction({
+  auth,
+  baseUrl,
+  authMapping,
+  description,
+  displayName,
+  name,
+  props,
+  extraProps,
+}: {
+  auth?: PieceAuthProperty;
+  baseUrl: (auth?: unknown) => string;
+  authMapping?: (
+    auth: unknown,
+    propsValue: StaticPropsValue<any>
+  ) => Promise<HttpHeaders>;
+  //   add description as a parameter that can be null
+  description?: string | null;
+  displayName?: string | null;
+  name?: string | null;
+  props?: {
+    url?: Partial<ReturnType<typeof Property.ShortText>>;
+    method?: Partial<StaticDropdownProperty<HttpMethod, boolean>>;
+    headers?: Partial<ReturnType<typeof Property.Object>>;
+    queryParams?: Partial<ReturnType<typeof Property.Object>>;
+    body?: Partial<ReturnType<typeof Property.Json>>;
+    failsafe?: Partial<ReturnType<typeof Property.Checkbox>>;
+    timeout?: Partial<ReturnType<typeof Property.Number>>;
+  };
+  extraProps?: InputPropertyMap;
 }) {
+ 
   return createAction({
     name: name ? name : 'custom_api_call',
     displayName: displayName ? displayName : 'Custom API Call',
-    description: description ? description : 'Make a custom API call to a specific endpoint',
+    description: description
+      ? description
+      : 'Make a custom API call to a specific endpoint',
     auth: auth ? auth : undefined,
     requireAuth: auth ? true : false,
     props: {
@@ -45,30 +98,32 @@ export function createCustomApiCallAction({ auth, baseUrl, authMapping, descript
           return {
             url: Property.ShortText({
               displayName: 'URL',
-              description: 'The full URL to use, including the base URL',
+              description: `You can either use the full URL or the relative path to the base URL 
+i.e ${getBaseUrlForDescription(baseUrl,auth)}/resource or /resource`,
               required: true,
               defaultValue: baseUrl(auth),
               ...(props?.url ?? {}),
-            })
-          }
-        }
+            }),
+          };
+        },
       }),
       method: Property.StaticDropdown({
         displayName: 'Method',
         required: true,
         options: {
-          options: Object.values(HttpMethod).map(v => {
+          options: Object.values(HttpMethod).map((v) => {
             return {
               label: v,
               value: v,
-            }
-          })
+            };
+          }),
         },
         ...(props?.method ?? {}),
       }),
       headers: Property.Object({
         displayName: 'Headers',
-        description: 'Authorization headers are injected automatically from your connection.',
+        description:
+          'Authorization headers are injected automatically from your connection.',
         required: true,
         ...(props?.headers ?? {}),
       }),
@@ -92,6 +147,7 @@ export function createCustomApiCallAction({ auth, baseUrl, authMapping, descript
         required: false,
         ...(props?.timeout ?? {}),
       }),
+      ...extraProps,
     },
 
     run: async (context) => {
@@ -103,18 +159,20 @@ export function createCustomApiCallAction({ auth, baseUrl, authMapping, descript
 
       let headersValue = headers as HttpHeaders;
       if (authMapping) {
-        const headers = await authMapping(context.auth)
+        const headers = await authMapping(context.auth, context.propsValue);
         if (headers) {
           headersValue = {
             ...headersValue,
-            ...headers
-          }
+            ...headers,
+          };
         }
       }
-
+      const urlValue = url['url'] as string;
+      const fullUrl = urlValue.startsWith('http://') || urlValue.startsWith('https://') ? urlValue :
+                     joinBaseUrlWithRelativePath({ baseUrl: baseUrl(context.auth), relativePath: urlValue})
       const request: HttpRequest<Record<string, unknown>> = {
         method,
-        url: url['url'],
+        url: fullUrl,
         headers: headersValue,
         queryParams: queryParams as QueryParams,
         timeout: timeout ? timeout * 1000 : 0,
@@ -128,10 +186,10 @@ export function createCustomApiCallAction({ auth, baseUrl, authMapping, descript
         return await httpClient.sendRequest(request);
       } catch (error) {
         if (failsafe) {
-          return (error as HttpError).errorMessage()
+          return (error as HttpError).errorMessage();
         }
         throw error;
       }
-    }
-  })
+    },
+  });
 }

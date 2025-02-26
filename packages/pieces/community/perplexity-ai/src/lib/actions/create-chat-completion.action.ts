@@ -2,7 +2,6 @@ import { perplexityAiAuth } from '../../';
 import {
   createAction,
   Property,
-  Validators,
 } from '@activepieces/pieces-framework';
 
 import {
@@ -10,6 +9,9 @@ import {
   httpClient,
   HttpMethod,
 } from '@activepieces/pieces-common';
+
+import { z } from 'zod';
+import { propsValidation } from '@activepieces/pieces-common';
 
 export const createChatCompletionAction = createAction({
   auth: perplexityAiAuth,
@@ -26,33 +28,21 @@ export const createChatCompletionAction = createAction({
         options: [
           // https://docs.perplexity.ai/guides/model-cards
           {
-            label: 'llama-3.1-sonar-small-128k-online',
-            value: 'llama-3.1-sonar-small-128k-online',
+            label:'sonar-reasoning-pro',
+            value:'sonar-reasoning-pro'
           },
           {
-            label: 'llama-3.1-sonar-large-128k-online',
-            value: 'llama-3.1-sonar-large-128k-online',
+            label:'sonar-reasoning',
+            value:'sonar-reasoning'
           },
           {
-            label: 'llama-3.1-sonar-huge-128k-online',
-            value: 'llama-3.1-sonar-huge-128k-online',
+            label:'sonar-pro',
+            value:'sonar-pro'
           },
           {
-            label: 'llama-3.1-sonar-small-128k-chat',
-            value: 'llama-3.1-sonar-small-128k-chat',
-          },
-          {
-            label: 'llama-3.1-sonar-large-128k-chat',
-            value: 'llama-3.1-sonar-large-128k-chat',
-          },
-          {
-            label: 'llama-3.1-8b-instruct',
-            value: 'llama-3.1-8b-instruct',
-          },
-          {
-            label: 'llama-3.1-70b-instruct',
-            value: 'llama-3.1-70b-instruct',
-          },
+            label:'sonar',
+            value:'sonar'
+          }
         ],
       },
     }),
@@ -65,7 +55,6 @@ export const createChatCompletionAction = createAction({
       required: false,
       description:
         'The amount of randomness in the response.Higher values are more random, and lower values are more deterministic.',
-      validators: [Validators.minValue(0), Validators.maxValue(2.0)],
       defaultValue: 0.2,
     }),
     max_tokens: Property.Number({
@@ -105,6 +94,10 @@ export const createChatCompletionAction = createAction({
     }),
   },
   async run(context) {
+    await propsValidation.validateZod(context.propsValue, {
+      temperature: z.number().min(0).max(2).optional(),
+    });
+
     const rolesArray = context.propsValue.roles
       ? (context.propsValue.roles as any)
       : [];
@@ -145,7 +138,11 @@ export const createChatCompletionAction = createAction({
     });
 
     if (response.status === 200) {
-      return response.body.choices[0].message.content;
+     
+      return {
+        result:response.body.choices[0].message.content,
+        citations:response.body.citations
+      }
     }
 
     return response.body;

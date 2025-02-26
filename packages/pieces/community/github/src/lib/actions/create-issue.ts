@@ -1,61 +1,52 @@
 import { createAction, Property } from '@activepieces/pieces-framework';
-import {
-  HttpRequest,
-  HttpMethod,
-  AuthenticationType,
-  httpClient,
-} from '@activepieces/pieces-common';
 import { githubAuth } from '../../';
-import { githubCommon } from '../common';
+import { githubApiCall, githubCommon } from '../common';
+import { HttpMethod } from '@activepieces/pieces-common';
 
 export const githubCreateIssueAction = createAction({
-  auth: githubAuth,
-  name: 'github_create_issue',
-  displayName: 'Create Issue',
-  description: 'Create Issue in GitHub Repository',
-  props: {
-    repository: githubCommon.repositoryDropdown,
-    title: Property.ShortText({
-      displayName: 'Title',
-      description: 'The title of the issue',
-      required: true,
-    }),
-    description: Property.LongText({
-      displayName: 'Description',
-      description: 'The description of the issue',
-      required: false,
-    }),
-    labels: githubCommon.labelDropDown(),
-    assignees: githubCommon.assigneeDropDown(),
-  },
-  async run(configValue) {
-    const { title, assignees, labels, description } = configValue.propsValue;
-    const { owner, repo } = configValue.propsValue['repository']!;
+	auth: githubAuth,
+	name: 'github_create_issue',
+	displayName: 'Create Issue',
+	description: 'Create Issue in GitHub Repository',
+	props: {
+		repository: githubCommon.repositoryDropdown,
+		title: Property.ShortText({
+			displayName: 'Title',
+			description: 'The title of the issue',
+			required: true,
+		}),
+		description: Property.LongText({
+			displayName: 'Description',
+			description: 'The description of the issue',
+			required: false,
+		}),
+		labels: githubCommon.labelDropDown(),
+		assignees: githubCommon.assigneeDropDown(),
+	},
+	async run({ auth, propsValue }) {
+		const { title, assignees, labels, description } = propsValue;
+		const { owner, repo } = propsValue.repository!;
 
-    const requestBody: CreateIssueRequestBody = {
-      title: title,
-      body: description,
-      labels: labels,
-      assignees: assignees,
-    };
+		const issueFields:Record<string, any> = {
+			title,
+			body: description,
+		}
 
-    const request: HttpRequest = {
-      method: HttpMethod.POST,
-      url: `${githubCommon.baseUrl}/repos/${owner}/${repo}/issues`,
-      body: requestBody,
-      authentication: {
-        type: AuthenticationType.BEARER_TOKEN,
-        token: configValue.auth.access_token,
-      },
-      queryParams: {},
-    };
-    return await httpClient.sendRequest(request);
-  },
+		if (labels) {
+			issueFields['labels'] = labels;
+		}
+
+		if (assignees) {
+			issueFields['assignees'] = assignees;
+		}
+
+		const response = await githubApiCall({
+			accessToken: auth.access_token,
+			method: HttpMethod.POST,
+			resourceUri: `/repos/${owner}/${repo}/issues`,
+			body: issueFields,
+		});
+
+		return response;
+	},
 });
-
-type CreateIssueRequestBody = {
-  title: string;
-  body?: string;
-  labels?: string[];
-  assignees?: string[];
-};

@@ -1,18 +1,18 @@
-import { initializeSentry, logger, SharedSystemProp, system } from '@activepieces/server-shared'
-import { apId } from '@activepieces/shared'
+import { AppSystemProp, exceptionHandler } from '@activepieces/server-shared'
+import { apId, ApMultipartFile } from '@activepieces/shared'
 import cors from '@fastify/cors'
 import formBody from '@fastify/formbody'
-import fastifyMultipart from '@fastify/multipart'
-import fastify, { FastifyInstance } from 'fastify'
+import fastifyMultipart, { MultipartFile } from '@fastify/multipart'
+import fastify, { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import fastifyFavicon from 'fastify-favicon'
 import { fastifyRawBody } from 'fastify-raw-body'
 import qs from 'qs'
 import { setupApp } from './app'
 import { healthModule } from './health/health.module'
 import { errorHandler } from './helper/error-handler'
+import { system } from './helper/system/system'
 import { setupWorker } from './worker'
 
-const MAX_FILE_SIZE_MB = system.getNumberOrThrow(SharedSystemProp.MAX_FILE_SIZE_MB)
 
 export const setupServer = async (): Promise<FastifyInstance> => {
     const app = await setupBaseApp()
@@ -26,15 +26,13 @@ export const setupServer = async (): Promise<FastifyInstance> => {
     return app
 }
 
-
-
 async function setupBaseApp(): Promise<FastifyInstance> {
     const app = fastify({
-        logger,
+        logger: system.globalLogger() as FastifyBaseLogger,
         ignoreTrailingSlash: true,
-        // Default 100MB, also set in nginx.conf
         pluginTimeout: 30000,
-        bodyLimit: Math.max(MAX_FILE_SIZE_MB, 4) * 1024 * 1024,
+        // Default 100MB, also set in nginx.conf
+        bodyLimit: 25 * 1024 * 1024,
         genReqId: () => {
             return `req_${apId()}`
         },
@@ -42,6 +40,7 @@ async function setupBaseApp(): Promise<FastifyInstance> {
             customOptions: {
                 removeAdditional: 'all',
                 useDefaults: true,
+                keywords: ['discriminator'],
                 coerceTypes: 'array',
                 formats: {},
             },
@@ -52,13 +51,17 @@ async function setupBaseApp(): Promise<FastifyInstance> {
     await app.register(fastifyFavicon)
     await app.register(fastifyMultipart, {
         attachFieldsToBody: 'keyValues',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async onFile(part: any) {
-            const buffer = await part.toBuffer()
-            part.value = buffer
+        async onFile(part: MultipartFile) {
+            const apFile: ApMultipartFile = {
+                filename: part.filename,
+                data: await part.toBuffer(),
+                type: 'file',
+            };
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (part as any).value = apFile
         },
     })
-    initializeSentry()
+    exceptionHandler.initializeSentry(system.get(AppSystemProp.SENTRY_DSN))
 
 
     await app.register(fastifyRawBody, {

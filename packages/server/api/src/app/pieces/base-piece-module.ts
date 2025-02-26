@@ -1,4 +1,5 @@
 import { PieceMetadata, PieceMetadataModel, PieceMetadataModelSummary } from '@activepieces/pieces-framework'
+import { apVersionUtil, UserInteractionJobType } from '@activepieces/server-shared'
 import {
     ALL_PRINCIPAL_TYPES,
     ApEdition,
@@ -14,14 +15,13 @@ import {
 } from '@activepieces/shared'
 import {
     FastifyPluginAsyncTypebox,
-    Type,
 } from '@fastify/type-provider-typebox'
-import { engineRunner } from 'server-worker'
-import { accessTokenManager } from '../authentication/lib/access-token-manager'
-import { flagService } from '../flags/flag.service'
+import { EngineHelperPropResult, EngineHelperResponse } from 'server-worker'
 import { flowService } from '../flows/flow/flow.service'
+import { sampleDataService } from '../flows/step-run/sample-data.service'
+import { userInteractionWatcher } from '../workers/user-interaction-watcher'
 import {
-    getPiecePackage,
+    getPiecePackageWithoutArchive,
     pieceMetadataService,
 } from './piece-metadata-service'
 import { pieceSyncService } from './piece-sync-service'
@@ -33,7 +33,7 @@ export const pieceModule: FastifyPluginAsyncTypebox = async (app) => {
 const basePiecesController: FastifyPluginAsyncTypebox = async (app) => {
 
     app.get('/versions', ListVersionsRequest, async (req): Promise<ListVersionsResponse> => {
-        return pieceMetadataService.getVersions({
+        return pieceMetadataService(req.log).getVersions({
             name: req.query.name,
             projectId: req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.projectId,
             release: req.query.release,
@@ -54,13 +54,13 @@ const basePiecesController: FastifyPluginAsyncTypebox = async (app) => {
         '/',
         ListPiecesRequest,
         async (req): Promise<PieceMetadataModelSummary[]> => {
-            const latestRelease = await flagService.getCurrentRelease()
+            const latestRelease = await apVersionUtil.getCurrentRelease()
             const includeTags = req.query.includeTags ?? false
             const release = req.query.release ?? latestRelease
             const edition = req.query.edition ?? ApEdition.COMMUNITY
             const platformId = req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.platform.id
             const projectId = req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.projectId
-            const pieceMetadataSummary = await pieceMetadataService.list({
+            const pieceMetadataSummary = await pieceMetadataService(req.log).list({
                 release,
                 includeHidden: req.query.includeHidden ?? false,
                 projectId,
@@ -87,8 +87,10 @@ const basePiecesController: FastifyPluginAsyncTypebox = async (app) => {
             const decodeScope = decodeURIComponent(scope)
             const decodedName = decodeURIComponent(name)
             const projectId = req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.projectId
-            return pieceMetadataService.getOrThrow({
+            const platformId = req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.platform.id
+            return pieceMetadataService(req.log).getOrThrow({
                 projectId,
+                platformId,
                 name: `${decodeScope}/${decodedName}`,
                 version,
             })
@@ -104,57 +106,43 @@ const basePiecesController: FastifyPluginAsyncTypebox = async (app) => {
 
             const decodedName = decodeURIComponent(name)
             const projectId = req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.projectId
-            return pieceMetadataService.getOrThrow({
+            const platformId = req.principal.type === PrincipalType.UNKNOWN ? undefined : req.principal.platform.id
+            return pieceMetadataService(req.log).getOrThrow({
                 projectId,
+                platformId,
                 name: decodedName,
                 version,
             })
         },
     )
 
-    app.post(
-        '/sync',
-        SyncPiecesRequest,
-        async (): Promise<void> => {
-            await pieceSyncService.sync()
-        },
-    )
+    app.post('/sync', SyncPiecesRequest, async (req) => pieceSyncService(req.log).sync())
 
     app.post(
         '/options',
         OptionsPieceRequest,
         async (req) => {
-            const request = req.body
-            const { projectId } = req.principal
-            const flow = await flowService.getOnePopulatedOrThrow({
+            const { projectId, platform } = req.principal
+            const flow = await flowService(req.log).getOnePopulatedOrThrow({
                 projectId,
-                id: request.flowId,
-                versionId: request.flowVersionId,
+                id: req.body.flowId,
+                versionId: req.body.flowVersionId,
             })
-            const engineToken = await accessTokenManager.generateEngineToken({
+            const sampleData = await sampleDataService(req.log).getSampleDataForFlow(projectId, flow.version)
+            const { result } = await userInteractionWatcher(req.log).submitAndWaitForResponse<EngineHelperResponse<EngineHelperPropResult>>({
+                jobType: UserInteractionJobType.EXECUTE_PROPERTY,
                 projectId,
-            })
-            const { result } = await engineRunner.executeProp(engineToken, {
-                piece: await getPiecePackage(projectId, request),
                 flowVersion: flow.version,
-                propertyName: request.propertyName,
-                actionOrTriggerName: request.actionOrTriggerName,
-                input: request.input,
-                projectId,
-                searchValue: request.searchValue,
+                propertyName: req.body.propertyName,
+                actionOrTriggerName: req.body.actionOrTriggerName,
+                input: req.body.input,
+                sampleData,
+                piece: await getPiecePackageWithoutArchive(req.log, projectId, platform.id, req.body),
             })
-
             return result
         },
     )
 
-    app.delete('/:id', DeletePieceRequest, async (req): Promise<void> => {
-        return pieceMetadataService.delete({
-            projectId: req.principal.projectId,
-            id: req.params.id,
-        })
-    },
-    )
 }
 
 const ListPiecesRequest = {
@@ -200,13 +188,7 @@ const OptionsPieceRequest = {
         body: PieceOptionRequest,
     },
 }
-const DeletePieceRequest = {
-    schema: {
-        params: Type.Object({
-            id: Type.String(),
-        }),
-    },
-}
+
 
 const ListVersionsRequest = {
     config: {

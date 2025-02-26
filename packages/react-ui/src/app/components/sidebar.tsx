@@ -4,13 +4,16 @@ import { FileTextIcon, LockKeyhole } from 'lucide-react';
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
+import { useEmbedding } from '@/components/embed-provider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useAuthorization } from '@/hooks/authorization-hooks';
 import { flagsHooks } from '@/hooks/flags-hooks';
+import { cn, determineDefaultRoute } from '@/lib/utils';
 import { ApFlagId, supportUrl } from '@activepieces/shared';
 
 import { ShowPoweredBy } from '../../components/show-powered-by';
@@ -28,11 +31,12 @@ type Link = {
 type CustomTooltipLinkProps = {
   to: string;
   label: string;
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: React.ElementType;
   extraClasses?: string;
   notification?: boolean;
   locked?: boolean;
   newWindow?: boolean;
+  isActive?: (pathname: string) => boolean;
 };
 const CustomTooltipLink = ({
   to,
@@ -42,11 +46,12 @@ const CustomTooltipLink = ({
   notification,
   locked,
   newWindow,
+  isActive,
 }: CustomTooltipLinkProps) => {
   const location = useLocation();
 
-  const isActive = location.pathname.startsWith(to);
-
+  const isLinkActive =
+    location.pathname.startsWith(to) || isActive?.(location.pathname);
   return (
     <Link
       to={to}
@@ -64,7 +69,7 @@ const CustomTooltipLink = ({
         )}
         <Icon
           className={`size-10 p-2.5 hover:text-primary rounded-lg transition-colors ${
-            isActive ? 'bg-accent text-primary' : ''
+            isLinkActive ? 'bg-accent text-primary' : ''
           } ${extraClasses || ''}`}
         />
         <span className="text-[10px]">{label}</span>
@@ -82,6 +87,9 @@ export type SidebarLink = {
   icon: React.ElementType;
   notification?: boolean;
   locked?: boolean;
+  hasPermission?: boolean;
+  showInEmbed?: boolean;
+  isActive?: (pathname: string) => boolean;
 };
 
 type SidebarProps = {
@@ -97,11 +105,12 @@ export function Sidebar({
   hideSideNav = false,
 }: SidebarProps) {
   const branding = flagsHooks.useWebsiteBranding();
-  const showSupportAndDocs = flagsHooks.useFlag<boolean>(
+  const { data: showSupportAndDocs } = flagsHooks.useFlag<boolean>(
     ApFlagId.SHOW_COMMUNITY,
   );
+  const { embedState } = useEmbedding();
   const { platform } = platformHooks.useCurrentPlatform();
-
+  const defaultRoute = determineDefaultRoute(useAuthorization().checkAccess);
   return (
     <div>
       <div className="flex min-h-screen w-full  ">
@@ -110,7 +119,7 @@ export function Sidebar({
             <ScrollArea>
               <nav className="flex flex-col items-center h-screen  sm:py-5  gap-5 p-2 ">
                 <Link
-                  to="/flows"
+                  to={isHomeDashboard ? defaultRoute : '/platform'}
                   className="h-[48px] items-center justify-center "
                 >
                   <Tooltip>
@@ -134,6 +143,7 @@ export function Sidebar({
                     key={index}
                     notification={link.notification}
                     locked={link.locked}
+                    isActive={link.isActive}
                   />
                 ))}
 
@@ -161,7 +171,13 @@ export function Sidebar({
         <div className="flex-1 p-4">
           <div className="flex flex-col">
             <Header />
-            <div className="container mx-auto flex py-10">{children}</div>
+            <div
+              className={cn('container mx-auto flex py-10 px-2', {
+                'py-4': embedState.isEmbedded,
+              })}
+            >
+              {children}
+            </div>
           </div>
         </div>
       </div>

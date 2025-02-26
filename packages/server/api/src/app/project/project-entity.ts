@@ -43,6 +43,11 @@ export const ProjectEntity = new EntitySchema<ProjectSchema>({
             type: String,
             nullable: true,
         },
+        releasesEnabled: {
+            type: Boolean,
+            nullable: false,
+            default: false,
+        },
     },
     indices: [
         {
@@ -53,6 +58,7 @@ export const ProjectEntity = new EntitySchema<ProjectSchema>({
         {
             name: 'idx_project_platform_id_external_id',
             columns: ['platformId', 'externalId'],
+            where: 'deleted IS NULL',
             unique: true,
         },
     ],

@@ -1,3 +1,6 @@
+import { t } from 'i18next';
+
+import { toast } from '@/components/ui/use-toast';
 import { api } from '@/lib/api';
 import {
   DropdownState,
@@ -14,35 +17,39 @@ import {
   ListPiecesRequestQuery,
   PackageType,
   PieceOptionRequest,
+  spreadIfDefined,
   Trigger,
   TriggerType,
 } from '@activepieces/shared';
 
 import { PieceStepMetadata, StepMetadata } from './types';
 
-export const PRIMITIVE_STEP_METADATA = {
+export const CORE_STEP_METADATA: Record<
+  Exclude<ActionType, ActionType.PIECE> | TriggerType.EMPTY,
+  StepMetadata
+> = {
   [ActionType.CODE]: {
-    displayName: 'Code',
+    displayName: t('Code'),
     logoUrl: 'https://cdn.activepieces.com/pieces/code.svg',
-    description: 'Powerful Node.js & TypeScript code with npm',
+    description: t('Powerful Node.js & TypeScript code with npm'),
     type: ActionType.CODE as const,
   },
   [ActionType.LOOP_ON_ITEMS]: {
-    displayName: 'Loop on Items',
+    displayName: t('Loop on Items'),
     logoUrl: 'https://cdn.activepieces.com/pieces/loop.svg',
     description: 'Iterate over a list of items',
     type: ActionType.LOOP_ON_ITEMS as const,
   },
-  [ActionType.BRANCH]: {
-    displayName: 'Branch',
+  [ActionType.ROUTER]: {
+    displayName: 'Router',
     logoUrl: 'https://cdn.activepieces.com/pieces/branch.svg',
-    description: 'Branch',
-    type: ActionType.BRANCH as const,
+    description: t('Split your flow into branches depending on condition(s)'),
+    type: ActionType.ROUTER,
   },
   [TriggerType.EMPTY]: {
-    displayName: 'Empty Trigger',
+    displayName: t('Empty Trigger'),
     logoUrl: 'https://cdn.activepieces.com/pieces/empty-trigger.svg',
-    description: 'Empty Trigger',
+    description: t('Empty Trigger'),
     type: TriggerType.EMPTY as const,
   },
 };
@@ -61,7 +68,21 @@ export const piecesApi = {
   options<T extends DropdownState<unknown> | PiecePropertyMap>(
     request: PieceOptionRequest,
   ): Promise<T> {
-    return api.post<T>(`/v1/pieces/options`, request);
+    return api.post<T>(`/v1/pieces/options`, request).catch((error) => {
+      console.error(error);
+      toast({
+        title: t('Error'),
+        description: t(
+          'An internal error occured while fetching data, please contact support',
+        ),
+        variant: 'destructive',
+      });
+      return {
+        options: [] as any[],
+        disabled: true,
+        placeholder: t('An internal error occured, please contact support'),
+      } as T;
+    });
   },
   mapToMetadata(
     type: 'action' | 'trigger',
@@ -77,6 +98,7 @@ export const piecesApi = {
       pieceVersion: piece.version,
       categories: piece.categories ?? [],
       packageType: piece.packageType,
+      auth: piece.auth,
     };
   },
   mapToSuggestions(
@@ -88,12 +110,17 @@ export const piecesApi = {
     };
   },
   async getMetadata(step: Action | Trigger): Promise<StepMetadata> {
+    const customLogoUrl =
+      'customLogoUrl' in step ? step.customLogoUrl : undefined;
     switch (step.type) {
-      case ActionType.BRANCH:
+      case ActionType.ROUTER:
       case ActionType.LOOP_ON_ITEMS:
       case ActionType.CODE:
       case TriggerType.EMPTY:
-        return PRIMITIVE_STEP_METADATA[step.type];
+        return {
+          ...CORE_STEP_METADATA[step.type],
+          ...spreadIfDefined('logoUrl', customLogoUrl),
+        };
       case ActionType.PIECE:
       case TriggerType.PIECE: {
         const { pieceName, pieceVersion } = step.settings;
@@ -101,10 +128,14 @@ export const piecesApi = {
           name: pieceName,
           version: pieceVersion,
         });
-        return piecesApi.mapToMetadata(
+        const metadata = await piecesApi.mapToMetadata(
           step.type === ActionType.PIECE ? 'action' : 'trigger',
           piece,
         );
+        return {
+          ...metadata,
+          ...spreadIfDefined('logoUrl', customLogoUrl),
+        };
       }
     }
   },
@@ -118,7 +149,9 @@ export const piecesApi = {
     formData.set('pieceVersion', params.pieceVersion);
     formData.set('scope', params.scope);
     if (params.packageType === PackageType.ARCHIVE) {
-      const buffer = await (params.pieceArchive as File).arrayBuffer();
+      const buffer = await (
+        params.pieceArchive as unknown as File
+      ).arrayBuffer();
       formData.append('pieceArchive', new Blob([buffer]));
     }
 

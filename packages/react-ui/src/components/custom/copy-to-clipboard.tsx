@@ -1,45 +1,44 @@
-import { useMutation } from '@tanstack/react-query';
-import { t } from 'i18next';
-import { Check, Copy } from 'lucide-react';
-
-import { toast } from '@/components/ui/use-toast';
+import { CopyButton } from '../ui/copy-button';
+import { DownloadButton } from '../ui/download-button';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 
 type CopyToClipboardInputProps = {
   textToCopy: string;
+  useInput: boolean;
+  fileName?: string;
 };
 
-const CopyToClipboardInput = ({ textToCopy }: CopyToClipboardInputProps) => {
-  const { mutate: copyToClipboard, isPending } = useMutation({
-    mutationFn: async (text: string) => {
-      await navigator.clipboard.writeText(text);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    },
-    onError: () => {
-      toast({
-        title: t('Failed to copy to clipboard'),
-        duration: 3000,
-      });
-    },
-  });
+const noBorderInputClass = `border-none w-full focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0`;
 
+const CopyToClipboardInput = ({
+  textToCopy,
+  fileName,
+  useInput,
+}: CopyToClipboardInputProps) => {
   return (
-    <div className="relative py-2 w-full">
-      <input
-        type="text"
-        className="col-span-6 bg-background border border-solid text-sm rounded-lg block w-full p-2.5"
-        value={textToCopy}
-        disabled
-      />
-      <button
-        className="absolute right-2 top-1/2 -translate-y-1/2 bg-background rounded-lg p-2 inline-flex items-center justify-center"
-        onClick={() => copyToClipboard(textToCopy)}
-      >
-        {isPending ? (
-          <Check className="w-4 h-4" />
-        ) : (
-          <Copy className="w-4 h-4" />
+    <div className="flex gap-2 items-center bg-background border border-solid text-sm rounded-lg block w-full select-none pr-3">
+      {useInput ? (
+        <Input value={textToCopy} className={noBorderInputClass} readOnly />
+      ) : (
+        <Textarea
+          value={textToCopy}
+          rows={6}
+          className={noBorderInputClass}
+          readOnly
+        />
+      )}
+      <div className="flex flex-col gap-1">
+        <CopyButton textToCopy={textToCopy} variant="ghost" />
+        {fileName && (
+          <DownloadButton
+            textToDownload={textToCopy}
+            fileName={fileName}
+            variant="ghost"
+            tooltipSide="bottom"
+          />
         )}
-      </button>
+      </div>
     </div>
   );
 };

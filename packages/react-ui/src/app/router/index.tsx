@@ -8,22 +8,25 @@ import {
 } from 'react-router-dom';
 
 import { PageTitle } from '@/app/components/page-title';
-import PlatformSettingsLayout from '@/app/components/platform-settings-layout';
+import PlatformSecondSidebarLayout from '@/app/components/platform-second-sidebar-layout';
 import ProjectSettingsLayout from '@/app/components/project-settings-layout';
+import { ChatPage } from '@/app/routes/chat';
 import { EmbedPage } from '@/app/routes/embed';
-import AIProvidersPage from '@/app/routes/platform/ai-providers';
 import AnalyticsPage from '@/app/routes/platform/analytics';
-import { PlatformPiecesPage } from '@/app/routes/platform/pieces';
-import { ApiKeysPage } from '@/app/routes/platform/settings/api-keys';
-import { BrandingPage } from '@/app/routes/platform/settings/branding';
-import { SigningKeysPage } from '@/app/routes/platform/settings/signing-keys';
-import { SSOPage } from '@/app/routes/platform/settings/sso';
+import { ApiKeysPage } from '@/app/routes/platform/security/api-keys';
+import { SigningKeysPage } from '@/app/routes/platform/security/signing-keys';
+import { SSOPage } from '@/app/routes/platform/security/sso';
+import AIProvidersPage from '@/app/routes/platform/setup/ai';
+import { BrandingPage } from '@/app/routes/platform/setup/branding';
+import { PlatformPiecesPage } from '@/app/routes/platform/setup/pieces';
 import { RedirectPage } from '@/app/routes/redirect';
 import { FlowRunsPage } from '@/app/routes/runs';
 import { ProjectPiecesPage } from '@/app/routes/settings/pieces';
 import { useEmbedding } from '@/components/embed-provider';
 import { VerifyEmail } from '@/features/authentication/components/verify-email';
 import { AcceptInvitation } from '@/features/team/component/accept-invitation';
+import { parentWindow } from '@/lib/utils';
+import { Permission } from '@activepieces/shared';
 import {
   ActivepiecesClientEventName,
   ActivepiecesVendorEventName,
@@ -36,30 +39,44 @@ import { PlatformAdminContainer } from '../components/platform-admin-container';
 import NotFoundPage from '../routes/404-page';
 import AuthenticatePage from '../routes/authenticate';
 import { ChangePasswordPage } from '../routes/change-password';
-import AppConnectionsPage from '../routes/connections';
+import { AppConnectionsPage } from '../routes/connections';
+import { EmbeddedConnectionDialog } from '../routes/embed/embedded-connection-dialog';
 import { FlowsPage } from '../routes/flows';
 import { FlowBuilderPage } from '../routes/flows/id';
 import { ResetPasswordPage } from '../routes/forget-password';
 import { FormPage } from '../routes/forms';
 import IssuesPage from '../routes/issues';
-import PlansPage from '../routes/plans';
-import AuditLogsPage from '../routes/platform/audit-logs';
-import { PlatformPiecesLayout } from '../routes/platform/pieces/platform-pieces-layout';
+import SettingsBilling from '../routes/platform/billing';
+import SettingsHealthPage from '../routes/platform/infra/health';
+import SettingsWorkersPage from '../routes/platform/infra/workers';
+import { PlatformMessages } from '../routes/platform/notifications/platform-messages';
 import ProjectsPage from '../routes/platform/projects';
-import TemplatesPage from '../routes/platform/templates';
+import AuditLogsPage from '../routes/platform/security/audit-logs';
+import { ProjectRolePage } from '../routes/platform/security/project-role';
+import { ProjectRoleUsersTable } from '../routes/platform/security/project-role/project-role-users-table';
+import { GlobalConnectionsTable } from '../routes/platform/setup/connections';
+import { LicenseKeyPage } from '../routes/platform/setup/license-key';
+import TemplatesPage from '../routes/platform/setup/templates';
 import UsersPage from '../routes/platform/users';
+import { ProjectReleasesPage } from '../routes/project-release';
+import ViewRelease from '../routes/project-release/view-release';
 import { FlowRunPage } from '../routes/runs/id';
 import AlertsPage from '../routes/settings/alerts';
 import AppearancePage from '../routes/settings/appearance';
+import { EnvironmentPage } from '../routes/settings/environment';
 import GeneralPage from '../routes/settings/general';
-import { GitSyncPage } from '../routes/settings/git-sync';
 import TeamPage from '../routes/settings/team';
 import { SignInPage } from '../routes/sign-in';
 import { SignUpPage } from '../routes/sign-up';
 import { ShareTemplatePage } from '../routes/templates/share-template';
 
-import { ProjectRouterWrapper } from './project-route-wrapper';
-
+import { AfterImportFlowRedirect } from './after-import-flow-redirect';
+import { DefaultRoute } from './default-route';
+import { RoutePermissionGuard } from './permission-guard';
+import {
+  ProjectRouterWrapper,
+  TokenCheckerWrapper,
+} from './project-route-wrapper';
 const SettingsRerouter = () => {
   const { hash } = useLocation();
   const fragmentWithoutHash = hash.slice(1).toLowerCase();
@@ -76,6 +93,10 @@ const routes = [
     element: <EmbedPage></EmbedPage>,
   },
   {
+    path: '/embed/connections',
+    element: <EmbeddedConnectionDialog></EmbeddedConnectionDialog>,
+  },
+  {
     path: '/authenticate',
     element: <AuthenticatePage />,
   },
@@ -83,9 +104,11 @@ const routes = [
     path: '/flows',
     element: (
       <DashboardContainer>
-        <PageTitle title="Flows">
-          <FlowsPage />
-        </PageTitle>
+        <RoutePermissionGuard permission={Permission.READ_FLOW}>
+          <PageTitle title="Flows">
+            <FlowsPage />
+          </PageTitle>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
@@ -93,9 +116,19 @@ const routes = [
     path: '/flows/:flowId',
     element: (
       <AllowOnlyLoggedInUserOnlyGuard>
-        <PageTitle title="Builder">
-          <FlowBuilderPage />
-        </PageTitle>
+        <RoutePermissionGuard permission={Permission.READ_FLOW}>
+          <PageTitle title="Builder">
+            <FlowBuilderPage />
+          </PageTitle>
+        </RoutePermissionGuard>
+      </AllowOnlyLoggedInUserOnlyGuard>
+    ),
+  }),
+  ...ProjectRouterWrapper({
+    path: '/flow-import-redirect/:flowId',
+    element: (
+      <AllowOnlyLoggedInUserOnlyGuard>
+        <AfterImportFlowRedirect></AfterImportFlowRedirect>
       </AllowOnlyLoggedInUserOnlyGuard>
     ),
   }),
@@ -107,13 +140,23 @@ const routes = [
       </PageTitle>
     ),
   },
+  {
+    path: '/chats/:flowId',
+    element: (
+      <PageTitle title="Chats">
+        <ChatPage />
+      </PageTitle>
+    ),
+  },
   ...ProjectRouterWrapper({
     path: '/runs/:runId',
     element: (
       <AllowOnlyLoggedInUserOnlyGuard>
-        <PageTitle title="Flow Run">
-          <FlowRunPage />
-        </PageTitle>
+        <RoutePermissionGuard permission={Permission.READ_RUN}>
+          <PageTitle title="Flow Run">
+            <FlowRunPage />
+          </PageTitle>
+        </RoutePermissionGuard>
       </AllowOnlyLoggedInUserOnlyGuard>
     ),
   }),
@@ -128,12 +171,24 @@ const routes = [
     ),
   },
   ...ProjectRouterWrapper({
+    path: '/releases/:releaseId',
+    element: (
+      <DashboardContainer>
+        <PageTitle title="Releases">
+          <ViewRelease />
+        </PageTitle>
+      </DashboardContainer>
+    ),
+  }),
+  ...ProjectRouterWrapper({
     path: '/runs',
     element: (
       <DashboardContainer>
-        <PageTitle title="Runs">
-          <FlowRunsPage />
-        </PageTitle>
+        <RoutePermissionGuard permission={Permission.READ_RUN}>
+          <PageTitle title="Runs">
+            <FlowRunsPage />
+          </PageTitle>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
@@ -141,9 +196,11 @@ const routes = [
     path: '/issues',
     element: (
       <DashboardContainer>
-        <PageTitle title="Issues">
-          <IssuesPage />
-        </PageTitle>
+        <RoutePermissionGuard permission={Permission.READ_ISSUES}>
+          <PageTitle title="Issues">
+            <IssuesPage />
+          </PageTitle>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
@@ -151,18 +208,20 @@ const routes = [
     path: '/connections',
     element: (
       <DashboardContainer>
-        <PageTitle title="Connections">
-          <AppConnectionsPage />
-        </PageTitle>
+        <RoutePermissionGuard permission={Permission.READ_APP_CONNECTION}>
+          <PageTitle title="Connections">
+            <AppConnectionsPage />
+          </PageTitle>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
   ...ProjectRouterWrapper({
-    path: '/plans',
+    path: '/releases',
     element: (
       <DashboardContainer>
-        <PageTitle title="Plans">
-          <PlansPage />
+        <PageTitle title="Releases">
+          <ProjectReleasesPage />
         </PageTitle>
       </DashboardContainer>
     ),
@@ -219,11 +278,13 @@ const routes = [
     path: '/settings/alerts',
     element: (
       <DashboardContainer>
-        <ProjectSettingsLayout>
-          <PageTitle title="Alerts">
-            <AlertsPage />
-          </PageTitle>
-        </ProjectSettingsLayout>
+        <RoutePermissionGuard permission={Permission.READ_ALERT}>
+          <ProjectSettingsLayout>
+            <PageTitle title="Alerts">
+              <AlertsPage />
+            </PageTitle>
+          </ProjectSettingsLayout>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
@@ -267,11 +328,13 @@ const routes = [
     path: '/settings/team',
     element: (
       <DashboardContainer>
-        <ProjectSettingsLayout>
-          <PageTitle title="Team">
-            <TeamPage />
-          </PageTitle>
-        </ProjectSettingsLayout>
+        <RoutePermissionGuard permission={Permission.READ_PROJECT_MEMBER}>
+          <ProjectSettingsLayout>
+            <PageTitle title="Team">
+              <TeamPage />
+            </PageTitle>
+          </ProjectSettingsLayout>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
@@ -281,14 +344,16 @@ const routes = [
   },
 
   ...ProjectRouterWrapper({
-    path: '/settings/git-sync',
+    path: '/settings/environments',
     element: (
       <DashboardContainer>
-        <ProjectSettingsLayout>
-          <PageTitle title="Git Sync">
-            <GitSyncPage />
-          </PageTitle>
-        </ProjectSettingsLayout>
+        <RoutePermissionGuard permission={Permission.READ_PROJECT_RELEASE}>
+          <ProjectSettingsLayout>
+            <PageTitle title="Environments">
+              <EnvironmentPage />
+            </PageTitle>
+          </ProjectSettingsLayout>
+        </RoutePermissionGuard>
       </DashboardContainer>
     ),
   }),
@@ -311,28 +376,6 @@ const routes = [
     ),
   },
   {
-    path: '/platform/audit-logs',
-    element: (
-      <PlatformAdminContainer>
-        <PageTitle title="Audit Logs">
-          <AuditLogsPage />
-        </PageTitle>
-      </PlatformAdminContainer>
-    ),
-  },
-  {
-    path: '/platform/pieces',
-    element: (
-      <PlatformAdminContainer>
-        <PlatformPiecesLayout>
-          <PageTitle title="Platform Pieces">
-            <PlatformPiecesPage />
-          </PageTitle>
-        </PlatformPiecesLayout>
-      </PlatformAdminContainer>
-    ),
-  },
-  {
     path: '/platform/projects',
     element: (
       <PlatformAdminContainer>
@@ -343,31 +386,26 @@ const routes = [
     ),
   },
   {
+    path: '/platform/setup/pieces',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="setup">
+          <PageTitle title="Pieces">
+            <PlatformPiecesPage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
     path: '/platform/analytics',
     element: (
       <PlatformAdminContainer>
         <PageTitle title="Analytics">
-          <AnalyticsPage />
-        </PageTitle>
-      </PlatformAdminContainer>
-    ),
-  },
-  {
-    path: '/platform/templates',
-    element: (
-      <PlatformAdminContainer>
-        <PageTitle title="Templates">
-          <TemplatesPage />
-        </PageTitle>
-      </PlatformAdminContainer>
-    ),
-  },
-  {
-    path: '/platform/users',
-    element: (
-      <PlatformAdminContainer>
-        <PageTitle title="Users">
-          <UsersPage />
+          <div className="flex flex-col gap-4 w-full">
+            <PlatformMessages />
+            <AnalyticsPage />
+          </div>
         </PageTitle>
       </PlatformAdminContainer>
     ),
@@ -383,71 +421,209 @@ const routes = [
     ),
   },
   {
-    path: '/platform/settings/branding',
+    path: '/platform/setup/connections',
     element: (
       <PlatformAdminContainer>
-        <PlatformSettingsLayout>
+        <PlatformSecondSidebarLayout type="setup">
+          <PageTitle title="Connections">
+            <GlobalConnectionsTable />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/setup/templates',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="setup">
+          <PageTitle title="Templates">
+            <TemplatesPage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/setup/branding',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="setup">
           <PageTitle title="Branding">
             <BrandingPage />
           </PageTitle>
-        </PlatformSettingsLayout>
+        </PlatformSecondSidebarLayout>
       </PlatformAdminContainer>
     ),
   },
   {
-    path: '/platform/pieces/ai',
+    path: '/platform/users',
     element: (
       <PlatformAdminContainer>
-        <PlatformPiecesLayout>
-          <PageTitle title="AI Providers">
+        <PageTitle title="Users">
+          <UsersPage />
+        </PageTitle>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/setup/ai',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="setup">
+          <PageTitle title="AI">
             <AIProvidersPage />
           </PageTitle>
-        </PlatformPiecesLayout>
+        </PlatformSecondSidebarLayout>
       </PlatformAdminContainer>
     ),
   },
   {
-    path: '/platform/settings/api-keys',
+    path: '/platform/security/api-keys',
     element: (
       <PlatformAdminContainer>
-        <PlatformSettingsLayout>
+        <PlatformSecondSidebarLayout type="security">
           <PageTitle title="API Keys">
             <ApiKeysPage />
           </PageTitle>
-        </PlatformSettingsLayout>
+        </PlatformSecondSidebarLayout>
       </PlatformAdminContainer>
     ),
   },
   {
-    path: '/platform/settings/signing-keys',
+    path: '/platform/security/audit-logs',
     element: (
       <PlatformAdminContainer>
-        <PlatformSettingsLayout>
+        <PlatformSecondSidebarLayout type="security">
+          <PageTitle title="Audit Logs">
+            <AuditLogsPage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/infrastructure/workers',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="infrastructure">
+          <PageTitle title="Workers">
+            <SettingsWorkersPage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/infrastructure/health',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="infrastructure">
+          <PageTitle title="System Health">
+            <SettingsHealthPage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/setup/billing',
+    element: (
+      <PlatformAdminContainer>
+        <PageTitle title="Billing">
+          <PlatformSecondSidebarLayout type="setup">
+            <SettingsBilling />
+          </PlatformSecondSidebarLayout>
+        </PageTitle>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/security/signing-keys',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="security">
           <PageTitle title="Signing Keys">
             <SigningKeysPage />
           </PageTitle>
-        </PlatformSettingsLayout>
+        </PlatformSecondSidebarLayout>
       </PlatformAdminContainer>
     ),
   },
   {
-    path: '/platform/settings/sso',
+    path: '/platform/security/sso',
     element: (
       <PlatformAdminContainer>
-        <PlatformSettingsLayout>
+        <PlatformSecondSidebarLayout type="security">
           <PageTitle title="SSO">
             <SSOPage />
           </PageTitle>
-        </PlatformSettingsLayout>
+        </PlatformSecondSidebarLayout>
       </PlatformAdminContainer>
     ),
   },
   {
-    path: '/platform/settings',
+    path: '/platform/setup/license-key',
     element: (
       <PlatformAdminContainer>
-        <PageTitle title="Platform Settings">
-          <Navigate to="/platform/settings/branding" replace />
+        <PlatformSecondSidebarLayout type="setup">
+          <PageTitle title="LicenseKey">
+            <LicenseKeyPage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/security/project-roles',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="security">
+          <PageTitle title="Project Roles">
+            <ProjectRolePage />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/security/project-roles/:projectRoleId',
+    element: (
+      <PlatformAdminContainer>
+        <PlatformSecondSidebarLayout type="security">
+          <PageTitle title="Project Role Users">
+            <ProjectRoleUsersTable />
+          </PageTitle>
+        </PlatformSecondSidebarLayout>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/setup',
+    element: (
+      <PlatformAdminContainer>
+        <PageTitle title="Platform Setup">
+          <Navigate to="/platform/setup/ai" replace />
+        </PageTitle>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/infrastructure',
+    element: (
+      <PlatformAdminContainer>
+        <PageTitle title="Platform Infrastructure">
+          <Navigate to="/platform/infrastructure/workers" replace />
+        </PageTitle>
+      </PlatformAdminContainer>
+    ),
+  },
+  {
+    path: '/platform/security',
+    element: (
+      <PlatformAdminContainer>
+        <PageTitle title="Platform Security">
+          <Navigate to="/platform/security/audit-logs" replace />
         </PageTitle>
       </PlatformAdminContainer>
     ),
@@ -457,10 +633,18 @@ const routes = [
     element: <RedirectPage></RedirectPage>,
   },
   {
+    path: '/projects/:projectId',
+    element: (
+      <TokenCheckerWrapper>
+        <DefaultRoute></DefaultRoute>
+      </TokenCheckerWrapper>
+    ),
+  },
+  {
     path: '/*',
     element: (
       <PageTitle title="Redirect">
-        <Navigate to="/flows" replace />
+        <DefaultRoute></DefaultRoute>
       </PageTitle>
     ),
   },
@@ -485,7 +669,7 @@ const ApRouter = () => {
       event: MessageEvent<ActivepiecesVendorRouteChanged>,
     ) => {
       if (
-        event.source === window.parent &&
+        event.source === parentWindow &&
         event.data.type === ActivepiecesVendorEventName.VENDOR_ROUTE_CHANGED
       ) {
         const targetRoute = event.data.data.vendorRoute;
@@ -505,11 +689,11 @@ const ApRouter = () => {
       return;
     }
     router.subscribe((state) => {
-      window.parent.postMessage(
+      parentWindow.postMessage(
         {
           type: ActivepiecesClientEventName.CLIENT_ROUTE_CHANGED,
           data: {
-            route: state.location.pathname,
+            route: state.location.pathname + state.location.search,
           },
         },
         '*',

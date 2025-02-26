@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { t } from 'i18next';
+import { TriangleAlert } from 'lucide-react';
 import React, { useState } from 'react';
 
 import { Button } from './ui/button';
@@ -21,6 +22,8 @@ type ConfirmationDeleteDialogProps = {
   entityName: string;
   mutationFn: () => Promise<void>;
   onError?: (error: Error) => void;
+  isDanger?: boolean;
+  buttonText?: string;
 };
 
 export function ConfirmationDeleteDialog({
@@ -30,6 +33,8 @@ export function ConfirmationDeleteDialog({
   mutationFn,
   entityName,
   onError,
+  buttonText,
+  isDanger = false,
 }: ConfirmationDeleteDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { isPending, mutate } = useMutation({
@@ -60,7 +65,7 @@ export function ConfirmationDeleteDialog({
               setIsOpen(false);
             }}
           >
-            {t('Close')}
+            {t('Cancel')}
           </Button>
           <Button
             loading={isPending}
@@ -71,7 +76,8 @@ export function ConfirmationDeleteDialog({
               mutate();
             }}
           >
-            {t('Remove')}
+            {isDanger && <TriangleAlert className="size-4 mr-2" />}
+            {buttonText || t('Remove')}
           </Button>
         </DialogFooter>
       </DialogContent>

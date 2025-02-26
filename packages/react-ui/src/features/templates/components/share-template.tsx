@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Separator } from '@/components/ui/seperator';
+import { Separator } from '@/components/ui/separator';
 import { INTERNAL_ERROR_TOAST, toast } from '@/components/ui/use-toast';
 import { flowsApi } from '@/features/flows/lib/flows-api';
 import { authenticationSession } from '@/lib/authentication-session';
@@ -28,6 +28,7 @@ const TemplateViewer = ({ template }: { template: FlowTemplate }) => {
         request: {
           displayName: template.template.displayName,
           trigger: template.template.trigger,
+          schemaVersion: template.template.schemaVersion,
         },
       });
       return updatedFlow;

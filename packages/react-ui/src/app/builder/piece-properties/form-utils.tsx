@@ -1,20 +1,22 @@
 import { TSchema, Type } from '@sinclair/typebox';
+import { t } from 'i18next';
 
 import {
   CONNECTION_REGEX,
+  CustomAuthProperty,
   OAuth2Props,
   PieceAuthProperty,
   PieceMetadata,
   PieceMetadataModel,
+  PieceMetadataModelSummary,
   PiecePropertyMap,
   PropertyType,
 } from '@activepieces/pieces-framework';
 import {
   Action,
   ActionType,
-  BranchActionSchema,
-  BranchOperator,
   CodeActionSchema,
+  isEmpty,
   LoopOnItemsActionSchema,
   PieceActionSchema,
   PieceActionSettings,
@@ -22,9 +24,19 @@ import {
   PieceTriggerSettings,
   Trigger,
   TriggerType,
-  ValidBranchCondition,
   isNil,
   spreadIfDefined,
+  RouterActionSchema,
+  RouterBranchesSchema,
+  SampleDataSetting,
+  RouterExecutionType,
+  UpsertOAuth2Request,
+  UpsertCloudOAuth2Request,
+  UpsertPlatformOAuth2Request,
+  UpsertAppConnectionRequestBody,
+  UpsertCustomAuthRequest,
+  UpsertBasicAuthRequest,
+  UpsertSecretTextRequest,
 } from '@activepieces/shared';
 
 function addAuthToPieceProps(
@@ -32,8 +44,14 @@ function addAuthToPieceProps(
   auth: PieceAuthProperty | undefined,
   requireAuth: boolean,
 ): PiecePropertyMap {
-  if (!requireAuth) {
-    return props;
+  if (!requireAuth || isNil(auth)) {
+    const newProps = Object.keys(props).reduce((acc, key) => {
+      if (key !== 'auth') {
+        acc[key] = props[key];
+      }
+      return acc;
+    }, {} as PiecePropertyMap);
+    return newProps;
   }
   return {
     ...props,
@@ -73,6 +91,7 @@ function buildInputSchemaForStep(
           addAuthToPieceProps(
             piece.triggers[actionNameOrTriggerName].props,
             piece.auth,
+            piece.triggers[actionNameOrTriggerName].requireAuth ?? true,
           ),
         );
       }
@@ -83,10 +102,89 @@ function buildInputSchemaForStep(
   }
 }
 
+function buildConnectionSchema(
+  piece: PieceMetadataModelSummary | PieceMetadataModel,
+) {
+  const auth = piece.auth;
+  if (isNil(auth)) {
+    return Type.Object({
+      request: Type.Composite([
+        Type.Omit(UpsertAppConnectionRequestBody, ['externalId']),
+      ]),
+    });
+  }
+  const connectionSchema = Type.Object({
+    externalId: Type.String({
+      pattern: '^[A-Za-z0-9_\\-@\\+\\.]*$',
+      minLength: 1,
+      errorMessage: t('Name can only contain letters, numbers and underscores'),
+    }),
+  });
+
+  switch (auth.type) {
+    case PropertyType.SECRET_TEXT:
+      return Type.Object({
+        request: Type.Composite([
+          Type.Omit(UpsertSecretTextRequest, ['externalId', 'displayName']),
+          connectionSchema,
+        ]),
+      });
+    case PropertyType.BASIC_AUTH:
+      return Type.Object({
+        request: Type.Composite([
+          Type.Omit(UpsertBasicAuthRequest, ['externalId', 'displayName']),
+          connectionSchema,
+        ]),
+      });
+    case PropertyType.CUSTOM_AUTH:
+      return Type.Object({
+        request: Type.Composite([
+          Type.Omit(UpsertCustomAuthRequest, [
+            'externalId',
+            'value',
+            'displayName',
+          ]),
+          connectionSchema,
+          Type.Object({
+            value: Type.Object({
+              props: formUtils.buildSchema(
+                (piece.auth as CustomAuthProperty<any>).props,
+              ),
+            }),
+          }),
+        ]),
+      });
+    case PropertyType.OAUTH2:
+      return Type.Object({
+        request: Type.Composite([
+          Type.Omit(
+            Type.Union([
+              UpsertOAuth2Request,
+              UpsertCloudOAuth2Request,
+              UpsertPlatformOAuth2Request,
+            ]),
+            ['externalId', 'displayName'],
+          ),
+          connectionSchema,
+        ]),
+      });
+    default:
+      return Type.Object({
+        request: Type.Composite([
+          Type.Omit(UpsertAppConnectionRequestBody, [
+            'externalId',
+            'displayName',
+          ]),
+          connectionSchema,
+        ]),
+      });
+  }
+}
+
 export const formUtils = {
   buildPieceDefaultValue: (
     selectedStep: Action | Trigger,
-    piece: PieceMetadata | null,
+    piece: PieceMetadata | null | undefined,
     includeCurrentInput: boolean,
   ): Action | Trigger => {
     const { type } = selectedStep;
@@ -111,23 +209,9 @@ export const formUtils = {
             items: selectedStep.settings.items ?? '',
           },
         };
-      case ActionType.BRANCH:
+      case ActionType.ROUTER:
         return {
           ...selectedStep,
-          settings: {
-            ...selectedStep.settings,
-            conditions: selectedStep.settings.conditions ?? [
-              [
-                {
-                  operator: BranchOperator.TEXT_EXACTLY_MATCHES,
-                  firstValue: '',
-                  secondValue: '',
-                  caseSensitive: false,
-                },
-              ],
-            ],
-            inputUiInfo: {},
-          },
         };
       case ActionType.CODE: {
         const defaultCode = `export const code = async (inputs) => {
@@ -149,11 +233,11 @@ export const formUtils = {
         const actionName = selectedStep?.settings?.actionName;
         const requireAuth = isNil(actionName)
           ? false
-          : piece?.actions?.[actionName]?.requireAuth ?? false;
-        const actionPropsWithoutAuth =
-          actionName !== undefined
-            ? piece?.actions?.[actionName]?.props ?? {}
-            : {};
+          : piece?.actions?.[actionName]?.requireAuth ?? true;
+
+        const actionPropsWithoutAuth = isNil(actionName)
+          ? {}
+          : piece?.actions?.[actionName]?.props ?? {};
         const props = addAuthToPieceProps(
           actionPropsWithoutAuth,
           piece?.auth,
@@ -178,14 +262,17 @@ export const formUtils = {
       }
       case TriggerType.PIECE: {
         const triggerName = selectedStep?.settings?.triggerName;
-        const triggerPropsWithoutAuth =
-          triggerName !== undefined
-            ? piece?.triggers?.[triggerName]?.props ?? {}
-            : {};
+        const requireAuth = isNil(triggerName)
+          ? false
+          : piece?.triggers?.[triggerName]?.requireAuth ?? true;
+
+        const triggerPropsWithoutAuth = isNil(triggerName)
+          ? {}
+          : piece?.triggers?.[triggerName]?.props ?? {};
         const props = addAuthToPieceProps(
           triggerPropsWithoutAuth,
           piece?.auth,
-          true,
+          requireAuth,
         );
         const input = (selectedStep?.settings?.input ?? {}) as Record<
           string,
@@ -225,12 +312,14 @@ export const formUtils = {
             }),
           }),
         ]);
-      case ActionType.BRANCH:
-        return Type.Composite([
-          BranchActionSchema,
+      case ActionType.ROUTER:
+        return Type.Intersect([
+          Type.Omit(RouterActionSchema, ['settings']),
           Type.Object({
             settings: Type.Object({
-              conditions: Type.Array(Type.Array(ValidBranchCondition)),
+              branches: RouterBranchesSchema(true),
+              executionType: Type.Enum(RouterExecutionType),
+              inputUiInfo: SampleDataSetting,
             }),
           }),
         ]);
@@ -283,8 +372,9 @@ export const formUtils = {
   },
   buildSchema: (props: PiecePropertyMap) => {
     const entries = Object.entries(props);
+    const nullableType: TSchema[] = [Type.Null(), Type.Undefined()];
     const nonNullableUnknownPropType = Type.Not(
-      Type.Union([Type.Null(), Type.Undefined()]),
+      Type.Union(nullableType),
       Type.Unknown(),
     );
     const propsSchema: Record<string, TSchema> = {};
@@ -348,7 +438,9 @@ export const formUtils = {
           break;
         case PropertyType.ARRAY: {
           const arraySchema = isNil(property.properties)
-            ? Type.Unknown()
+            ? Type.String({
+                minLength: property.required ? 1 : undefined,
+              })
             : formUtils.buildSchema(property.properties);
           propsSchema[name] = Type.Union([
             Type.Array(arraySchema, {
@@ -391,30 +483,38 @@ export const formUtils = {
           break;
       }
 
-      if (!property.required) {
+      //optional array is checked against its children
+      if (!property.required && property.type !== PropertyType.ARRAY) {
         propsSchema[name] = Type.Optional(
-          Type.Union([Type.Null(), Type.Undefined(), propsSchema[name]]),
+          Type.Union(
+            isEmpty(propsSchema[name])
+              ? [Type.Any(), ...nullableType]
+              : [propsSchema[name], ...nullableType],
+          ),
         );
       }
     }
     return Type.Object(propsSchema);
   },
   getDefaultValueForStep,
+  buildConnectionSchema,
 };
 
-function getDefaultValueForStep(
+export function getDefaultValueForStep(
   props: PiecePropertyMap | OAuth2Props,
-  input: Record<string, unknown>,
+  existingInput: Record<string, unknown>,
 ): Record<string, unknown> {
   const defaultValues: Record<string, unknown> = {};
   const entries = Object.entries(props);
   for (const [name, property] of entries) {
     switch (property.type) {
       case PropertyType.CHECKBOX:
-        defaultValues[name] = input[name] ?? property.defaultValue ?? false;
+        defaultValues[name] =
+          existingInput[name] ?? property.defaultValue ?? false;
         break;
       case PropertyType.ARRAY:
-        defaultValues[name] = input[name] ?? property.defaultValue ?? [];
+        defaultValues[name] =
+          existingInput[name] ?? property.defaultValue ?? [];
         break;
       case PropertyType.MARKDOWN:
       case PropertyType.DATE_TIME:
@@ -427,26 +527,27 @@ function getDefaultValueForStep(
       case PropertyType.CUSTOM_AUTH:
       case PropertyType.SECRET_TEXT:
       case PropertyType.OAUTH2: {
-        defaultValues[name] = input[name] ?? property.defaultValue;
+        defaultValues[name] = existingInput[name] ?? property.defaultValue;
         break;
       }
       case PropertyType.JSON: {
-        defaultValues[name] = input[name] ?? property.defaultValue;
+        defaultValues[name] = existingInput[name] ?? property.defaultValue;
         break;
       }
       case PropertyType.NUMBER: {
-        defaultValues[name] = input[name] ?? property.defaultValue;
+        defaultValues[name] = existingInput[name] ?? property.defaultValue;
         break;
       }
       case PropertyType.MULTI_SELECT_DROPDOWN:
-        defaultValues[name] = input[name] ?? property.defaultValue ?? [];
+        defaultValues[name] = existingInput[name] ?? property.defaultValue;
         break;
       case PropertyType.STATIC_MULTI_SELECT_DROPDOWN:
-        defaultValues[name] = input[name] ?? property.defaultValue ?? [];
+        defaultValues[name] = existingInput[name] ?? property.defaultValue;
         break;
       case PropertyType.OBJECT:
       case PropertyType.DYNAMIC:
-        defaultValues[name] = input[name] ?? property.defaultValue ?? {};
+        defaultValues[name] =
+          existingInput[name] ?? property.defaultValue ?? {};
         break;
     }
   }

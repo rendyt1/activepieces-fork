@@ -1,12 +1,13 @@
 import { Type } from "@sinclair/typebox";
 import { BasePropertySchema, TPropertyValue } from "./common";
 import { PropertyType } from "./property-type";
-import { ValidationInputType } from "../../validators/types";
 import { LongTextProperty, ShortTextProperty } from "./text-property";
 import { StaticDropdownProperty, StaticMultiSelectDropdownProperty } from "./dropdown/static-dropdown";
 import { MultiSelectDropdownProperty } from "./dropdown/dropdown-prop";
 import { CheckboxProperty } from "./checkbox-property";
 import { NumberProperty } from "./number-property";
+import { FileProperty } from "./file-property";
+import { JsonProperty } from './json-property';
 
 export const ArraySubProps = Type.Record(Type.String(), Type.Union([
     ShortTextProperty,
@@ -15,7 +16,8 @@ export const ArraySubProps = Type.Record(Type.String(), Type.Union([
     MultiSelectDropdownProperty,
     StaticMultiSelectDropdownProperty,
     CheckboxProperty,
-    NumberProperty
+    NumberProperty,
+    FileProperty
 ]))
 
 export const ArrayProperty = Type.Composite([
@@ -35,9 +37,11 @@ export type ArraySubProps<R extends boolean> = Record<
     | StaticMultiSelectDropdownProperty<any, R>
     | CheckboxProperty<R>
     | NumberProperty<R>
+    | FileProperty<R>
+    | JsonProperty<R>
 >;
 
 export type ArrayProperty<R extends boolean> = BasePropertySchema &
 {
     properties?: ArraySubProps<R>;
-} & TPropertyValue<unknown[], PropertyType.ARRAY, ValidationInputType.ARRAY, R>;
+} & TPropertyValue<unknown[], PropertyType.ARRAY, R>;

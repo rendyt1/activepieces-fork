@@ -1,15 +1,12 @@
 import { t } from 'i18next';
-import React, { useMemo } from 'react';
+import React from 'react';
 
 import { JsonViewer } from '@/components/json-viewer';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StepStatusIcon } from '@/features/flow-runs/components/step-status-icon';
 import { formatUtils } from '@/lib/utils';
-import {
-  ActionType,
-  StepOutputStatus,
-  TriggerType,
-} from '@activepieces/shared';
+import { StepOutputStatus } from '@activepieces/shared';
 
 import { TestButtonTooltip } from './test-step-tooltip';
 
@@ -18,11 +15,11 @@ type TestSampleDataViewerProps = {
   isValid: boolean;
   isSaving: boolean;
   isTesting: boolean;
-  currentSelectedData: unknown;
+  sampleData: unknown;
   errorMessage: string | undefined;
   lastTestDate: string | undefined;
-  type: ActionType | TriggerType;
   children?: React.ReactNode;
+  consoleLogs?: string | null;
 };
 
 const TestSampleDataViewer = React.memo(
@@ -31,23 +28,19 @@ const TestSampleDataViewer = React.memo(
     isValid,
     isSaving,
     isTesting,
-    currentSelectedData,
+    sampleData,
     errorMessage,
     lastTestDate,
-    type,
     children,
+    consoleLogs,
   }: TestSampleDataViewerProps) => {
-    const formattedData = useMemo(
-      () => formatUtils.formatStepInputOrOutput(currentSelectedData, type),
-      [currentSelectedData, type],
-    );
     return (
       <>
         {!isTesting && children}
         <div className="flex-grow flex flex-col w-full text-start gap-4">
           <div className="flex justify-center items-center">
             <div className="flex flex-col flex-grow gap-1">
-              <div className="text-md flex gap-1 justyf-center items-center">
+              <div className="text-md flex gap-1 items-center">
                 {errorMessage ? (
                   <>
                     <StepStatusIcon
@@ -86,10 +79,32 @@ const TestSampleDataViewer = React.memo(
               </Button>
             </TestButtonTooltip>
           </div>
-          <JsonViewer
-            json={errorMessage ?? formattedData}
-            title={t('Output')}
-          ></JsonViewer>
+
+          {consoleLogs ? (
+            <Tabs defaultValue="Output">
+              <TabsList className="grid w-full grid-cols-2 w-[250px]">
+                <TabsTrigger value="Output">{t('Output')}</TabsTrigger>
+                <TabsTrigger value="Logs">{t('Logs')}</TabsTrigger>
+              </TabsList>
+              <TabsContent value="Output">
+                <JsonViewer
+                  json={errorMessage ?? sampleData}
+                  title={t('Output')}
+                ></JsonViewer>
+              </TabsContent>
+
+              <TabsContent value="Logs">
+                {consoleLogs && (
+                  <JsonViewer json={consoleLogs} title={t('Logs')}></JsonViewer>
+                )}
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <JsonViewer
+              json={errorMessage ?? sampleData}
+              title={t('Output')}
+            ></JsonViewer>
+          )}
         </div>
       </>
     );

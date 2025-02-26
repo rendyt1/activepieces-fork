@@ -12,35 +12,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { flagsHooks } from '@/hooks/flags-hooks';
-import { projectHooks } from '@/hooks/project-hooks';
-import { ApFlagId, ProjectMemberRole } from '@activepieces/shared';
+import { platformHooks } from '@/hooks/platform-hooks';
+import { DefaultProjectRole } from '@activepieces/shared';
 
 type ProjectRoleSelectProps = {
   form: UseFormReturn<any>;
 };
 
 const RolesDisplayNames: { [k: string]: string } = {
-  [ProjectMemberRole.ADMIN]: t('Admin'),
-  [ProjectMemberRole.EDITOR]: t('Editor'),
-  [ProjectMemberRole.OPERATOR]: t('Operator'),
-  [ProjectMemberRole.VIEWER]: t('Viewer'),
+  [DefaultProjectRole.ADMIN]: t('Admin'),
+  [DefaultProjectRole.EDITOR]: t('Editor'),
+  [DefaultProjectRole.OPERATOR]: t('Operator'),
+  [DefaultProjectRole.VIEWER]: t('Viewer'),
 };
 
 const ProjectRoleSelect = ({ form }: ProjectRoleSelectProps) => {
-  const { project } = projectHooks.useCurrentProject();
+  const { platform } = platformHooks.useCurrentPlatform();
 
-  const { data: isCloudPlatform } = flagsHooks.useFlag<boolean>(
-    ApFlagId.IS_CLOUD_PLATFORM,
-  );
-
-  const invitationRoles = Object.values(ProjectMemberRole)
+  const invitationRoles = Object.values(DefaultProjectRole)
     .filter((f) => {
-      if (f === ProjectMemberRole.ADMIN) {
+      if (f === DefaultProjectRole.ADMIN) {
         return true;
       }
-      const showNonAdmin =
-        !isCloudPlatform || project?.plan.teamMembers !== 100;
+      const showNonAdmin = platform.projectRolesEnabled;
       return showNonAdmin;
     })
     .map((role) => {
@@ -60,7 +54,7 @@ const ProjectRoleSelect = ({ form }: ProjectRoleSelectProps) => {
   return (
     <FormField
       control={form.control}
-      name="projectRole"
+      name="role"
       render={({ field }) => (
         <FormItem className="grid gap-3">
           <Label>{t('Project Role')}</Label>

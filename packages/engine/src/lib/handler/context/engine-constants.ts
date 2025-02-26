@@ -1,5 +1,5 @@
 import { ExecuteFlowOperation, ExecutePropsOptions, ExecuteStepOperation, ExecuteTriggerOperation, ExecutionType, FlowVersionState, ProgressUpdateType, Project, ProjectId, ResumePayload, TriggerHookType } from '@activepieces/shared'
-import { VariableService } from '../../variables/variable-service'
+import { createPropsResolver, PropsResolver } from '../../variables/props-resolver'
 
 type RetryConstants = {
     maxAttempts: number
@@ -18,9 +18,14 @@ export class EngineConstants {
     public static readonly INPUT_FILE = './input.json'
     public static readonly OUTPUT_FILE = './output.json'
     public static readonly PIECE_SOURCES = process.env.AP_PIECES_SOURCE ?? 'FILE'
+    public static readonly TEST_MODE = process.env.AP_TEST_MODE === 'true'
 
 
     private project: Project | null = null
+
+    public get isRunningApTests(): boolean {
+        return EngineConstants.TEST_MODE
+    }
 
     public get baseCodeDirectory(): string {
         return EngineConstants.BASE_CODE_DIRECTORY
@@ -35,19 +40,25 @@ export class EngineConstants {
         public readonly flowVersionId: string,
         public readonly flowVersionState: FlowVersionState,
         public readonly flowRunId: string,
-        public readonly publicUrl: string,
+        public readonly publicApiUrl: string,
         public readonly internalApiUrl: string,
         public readonly retryConstants: RetryConstants,
         public readonly engineToken: string,
         public readonly projectId: ProjectId,
-        public readonly variableService: VariableService,
+        public readonly propsResolver: PropsResolver,
         public readonly testSingleStepMode: boolean,
-        public readonly filesServiceType: 'local' | 'db',
         public readonly progressUpdateType: ProgressUpdateType,
         public readonly serverHandlerId: string | null,
         public readonly httpRequestId: string | null,
         public readonly resumePayload?: ResumePayload,
-    ) { }
+    ) {
+        if (!publicApiUrl.endsWith('/api/')) {
+            throw new Error('Public URL must end with a slash, got: ' + publicApiUrl)
+        }
+        if (!internalApiUrl.endsWith('/')) {
+            throw new Error('Internal API URL must end with a slash, got: ' + internalApiUrl)
+        }
+    }
 
     public static fromExecuteFlowInput(input: ExecuteFlowOperation): EngineConstants {
         return new EngineConstants(
@@ -55,18 +66,17 @@ export class EngineConstants {
             input.flowVersion.id,
             input.flowVersion.state,
             input.flowRunId,
-            input.publicUrl,
+            input.publicApiUrl,
             input.internalApiUrl,
             DEFAULT_RETRY_CONSTANTS,
             input.engineToken,
             input.projectId,
-            new VariableService({
+            createPropsResolver({
                 projectId: input.projectId,
                 engineToken: input.engineToken,
                 apiUrl: input.internalApiUrl,
             }),
             false,
-            'local',
             input.progressUpdateType,
             input.serverHandlerId ?? null,
             input.httpRequestId ?? null,
@@ -80,18 +90,17 @@ export class EngineConstants {
             input.flowVersion.id,
             input.flowVersion.state,
             'test-run',
-            input.publicUrl,
+            input.publicApiUrl,
             addTrailingSlashIfMissing(input.internalApiUrl),
             DEFAULT_RETRY_CONSTANTS,
             input.engineToken,
             input.projectId,
-            new VariableService({
+            createPropsResolver({
                 projectId: input.projectId,
                 engineToken: input.engineToken,
                 apiUrl: addTrailingSlashIfMissing(input.internalApiUrl),
             }),
             true,
-            'db',
             ProgressUpdateType.NONE,
             null,
             null,
@@ -104,18 +113,17 @@ export class EngineConstants {
             input.flowVersion.id,
             input.flowVersion.state,
             'execute-property',
-            input.publicUrl,
+            input.publicApiUrl,
             addTrailingSlashIfMissing(input.internalApiUrl),
             DEFAULT_RETRY_CONSTANTS,
             input.engineToken,
             input.projectId,
-            new VariableService({
+            createPropsResolver({
                 projectId: input.projectId,
                 engineToken: input.engineToken,
                 apiUrl: addTrailingSlashIfMissing(input.internalApiUrl),
             }),
             true,
-            'db',
             ProgressUpdateType.NONE,
             null,
             null,
@@ -128,18 +136,17 @@ export class EngineConstants {
             input.flowVersion.id,
             input.flowVersion.state,
             'execute-trigger',
-            input.publicUrl,
+            input.publicApiUrl,
             addTrailingSlashIfMissing(input.internalApiUrl),
             DEFAULT_RETRY_CONSTANTS,
             input.engineToken,
             input.projectId,
-            new VariableService({
+            createPropsResolver({
                 projectId: input.projectId,
                 engineToken: input.engineToken,
                 apiUrl: addTrailingSlashIfMissing(input.internalApiUrl),
             }),
             true,
-            'db',
             ProgressUpdateType.NONE,
             null,
             null,

@@ -1,108 +1,287 @@
 import {
   ReactFlow,
   Background,
-  getNodesBounds,
-  useReactFlow,
+  SelectionMode,
+  OnSelectionChangeParams,
+  useStoreApi,
+  PanOnScrollMode,
+  useKeyPress,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import React from 'react';
-import { usePrevious } from 'react-use';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 
-import { isFlowStateTerminal } from '@activepieces/shared';
+import {
+  ActionType,
+  flowStructureUtil,
+  FlowVersion,
+  isNil,
+  Step,
+} from '@activepieces/shared';
 
-import { flowRunUtils } from '../../../features/flow-runs/lib/flow-run-utils';
-import { useBuilderStateContext } from '../builder-hooks';
+import {
+  doesSelectionRectangleExist,
+  NODE_SELECTION_RECT_CLASS_NAME,
+  useBuilderStateContext,
+  useFocusedFailedStep,
+  useHandleKeyPressOnCanvas,
+  usePasteActionsInClipboard,
+  useResizeCanvas,
+} from '../builder-hooks';
 
-import { ApEdgeWithButton } from './edges/edge-with-button';
-import { ReturnLoopedgeButton } from './edges/return-loop-edge';
-import { flowCanvasUtils } from './flow-canvas-utils';
+import {
+  CanvasContextMenu,
+  ContextMenuType,
+} from './context-menu/canvas-context-menu';
 import { FlowDragLayer } from './flow-drag-layer';
-import { ApBigButton } from './nodes/big-button';
-import { LoopStepPlaceHolder } from './nodes/loop-step-placeholder';
-import { StepPlaceHolder } from './nodes/step-holder-placeholder';
-import { ApStepNode } from './nodes/step-node';
-import { AboveFlowWidgets, BelowFlowWidget } from './widgets';
-const edgeTypes = {
-  apEdge: ApEdgeWithButton,
-  apReturnEdge: ReturnLoopedgeButton,
-};
-const nodeTypes = {
-  stepNode: ApStepNode,
-  placeholder: StepPlaceHolder,
-  bigButton: ApBigButton,
-  loopPlaceholder: LoopStepPlaceHolder,
-};
-const FlowCanvas = React.memo(() => {
-  const [allowCanvasPanning, graph, graphHeight, run] = useBuilderStateContext(
-    (state) => {
-      const graph = flowCanvasUtils.convertFlowVersionToGraph(
-        state.flowVersion,
-      );
-      return [
-        state.allowCanvasPanning,
-        graph,
-        getNodesBounds(graph.nodes),
-        state.run,
-      ];
-    },
-  );
-  const previousRun = usePrevious(run);
-  const { fitView } = useReactFlow();
-  if (
-    (run && previousRun?.id !== run.id && isFlowStateTerminal(run.status)) ||
-    (run &&
-      previousRun &&
-      !isFlowStateTerminal(previousRun.status) &&
-      isFlowStateTerminal(run.status))
-  ) {
-    const failedStep = run.steps
-      ? flowRunUtils.findFailedStepInOutput(run.steps)
-      : null;
-    if (failedStep) {
-      setTimeout(() => {
-        fitView(flowCanvasUtils.createFocusStepInGraphParams(failedStep));
-      });
-    }
+import {
+  flowUtilConsts,
+  SELECTION_RECT_CHEVRON_ATTRIBUTE,
+  STEP_CONTEXT_MENU_ATTRIBUTE,
+} from './utils/consts';
+import { flowCanvasUtils } from './utils/flow-canvas-utils';
+import { AboveFlowWidgets } from './widgets';
+import { useShowChevronNextToSelection } from './widgets/selection-chevron-button';
+
+const getChildrenKey = (step: Step) => {
+  switch (step.type) {
+    case ActionType.LOOP_ON_ITEMS:
+      return step.firstLoopAction ? step.firstLoopAction.name : '';
+    case ActionType.ROUTER:
+      return step.children.reduce((routerKey, child) => {
+        const childrenKey = child
+          ? flowStructureUtil
+              .getAllSteps(child)
+              .reduce(
+                (childKey, grandChild) => `${childKey}-${grandChild.name}`,
+                '',
+              )
+          : 'null';
+        return `${routerKey}-${childrenKey}`;
+      }, '');
+    case ActionType.CODE:
+    case ActionType.PIECE:
+      return '';
   }
+};
 
-  return (
-    <div className="size-full relative overflow-hidden">
-      <FlowDragLayer>
-        <ReactFlow
-          nodeTypes={nodeTypes}
-          nodes={graph.nodes}
-          edgeTypes={edgeTypes}
-          edges={graph.edges}
-          draggable={false}
-          edgesFocusable={false}
-          elevateEdgesOnSelect={false}
-          maxZoom={1.5}
-          minZoom={0.5}
-          panOnDrag={allowCanvasPanning}
-          zoomOnDoubleClick={false}
-          panOnScroll={true}
-          fitView={true}
-          nodesConnectable={false}
-          elementsSelectable={true}
-          nodesDraggable={false}
-          nodesFocusable={false}
-          fitViewOptions={{
-            includeHiddenNodes: false,
-            minZoom: 0.5,
-            maxZoom: 1.2,
-            nodes: graph.nodes.slice(0, 5),
-            duration: 0,
-          }}
+const createGraphKey = (flowVersion: FlowVersion) => {
+  return flowStructureUtil
+    .getAllSteps(flowVersion.trigger)
+    .reduce((acc, step) => {
+      const branchesNames =
+        step.type === ActionType.ROUTER
+          ? step.settings.branches.map((branch) => branch.branchName).join('-')
+          : '0';
+      const childrenKey = getChildrenKey(step);
+      return `${acc}-${step.displayName}-${step.type}-${
+        step.nextAction ? step.nextAction.name : ''
+      }-${
+        step.type === ActionType.PIECE ? step.settings.pieceName : ''
+      }-${branchesNames}-${childrenKey}`;
+    }, '');
+};
+
+export const FlowCanvas = React.memo(
+  ({
+    setHasCanvasBeenInitialised,
+    lefSideBarContainerWidth,
+  }: {
+    setHasCanvasBeenInitialised: (value: boolean) => void;
+    lefSideBarContainerWidth: number;
+  }) => {
+    const [
+      flowVersion,
+      readonly,
+      setSelectedNodes,
+      selectedNodes,
+      applyOperation,
+      selectedStep,
+      exitStepSettings,
+      panningMode,
+      setPieceSelectorStep,
+      selectStepByName,
+    ] = useBuilderStateContext((state) => {
+      return [
+        state.flowVersion,
+        state.readonly,
+        state.setSelectedNodes,
+        state.selectedNodes,
+        state.applyOperation,
+        state.selectedStep,
+        state.exitStepSettings,
+        state.panningMode,
+        state.setPieceSelectorStep,
+        state.selectStepByName,
+      ];
+    });
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { actionsToPaste, fetchClipboardOperations } =
+      usePasteActionsInClipboard();
+    useShowChevronNextToSelection();
+    useFocusedFailedStep();
+    useHandleKeyPressOnCanvas();
+    useResizeCanvas(containerRef, setHasCanvasBeenInitialised);
+    const storeApi = useStoreApi();
+    const isShiftKeyPressed = useKeyPress('Shift');
+    const inGrabPanningMode = !isShiftKeyPressed && panningMode === 'grab';
+    const onSelectionChange = useCallback(
+      (ev: OnSelectionChangeParams) => {
+        const selectedNodes = ev.nodes.map((n) => n.id);
+        if (selectedNodes.length === 0 && selectedStep) {
+          selectedNodes.push(selectedStep);
+        }
+        setSelectedNodes(selectedNodes);
+      },
+      [setSelectedNodes, selectedStep],
+    );
+    const graphKey = createGraphKey(flowVersion);
+    const graph = useMemo(() => {
+      return flowCanvasUtils.convertFlowVersionToGraph(flowVersion);
+    }, [graphKey]);
+    const [contextMenuType, setContextMenuType] = useState<ContextMenuType>(
+      ContextMenuType.CANVAS,
+    );
+    const onContextMenu = useCallback(
+      (ev: React.MouseEvent<HTMLDivElement>) => {
+        fetchClipboardOperations();
+        if (
+          ev.target instanceof HTMLElement ||
+          ev.target instanceof SVGElement
+        ) {
+          const stepElement = ev.target.closest(
+            `[data-${STEP_CONTEXT_MENU_ATTRIBUTE}]`,
+          );
+          const stepName = stepElement?.getAttribute(
+            `data-${STEP_CONTEXT_MENU_ATTRIBUTE}`,
+          );
+
+          if (stepElement && stepName) {
+            selectStepByName(stepName);
+            storeApi.getState().addSelectedNodes([stepName]);
+          }
+          const targetIsSelectionChevron = ev.target.closest(
+            `[data-${SELECTION_RECT_CHEVRON_ATTRIBUTE}]`,
+          );
+          const targetIsSelectionRect = ev.target.classList.contains(
+            NODE_SELECTION_RECT_CLASS_NAME,
+          );
+          if (
+            stepElement ||
+            targetIsSelectionRect ||
+            targetIsSelectionChevron
+          ) {
+            setContextMenuType(ContextMenuType.STEP);
+          } else {
+            setContextMenuType(ContextMenuType.CANVAS);
+          }
+          if (
+            doesSelectionRectangleExist() &&
+            !targetIsSelectionRect &&
+            !targetIsSelectionChevron
+          ) {
+            document
+              .querySelector(`.${NODE_SELECTION_RECT_CLASS_NAME}`)
+              ?.remove();
+          }
+        }
+      },
+      [setSelectedNodes, selectedNodes, doesSelectionRectangleExist],
+    );
+
+    const onSelectionEnd = useCallback(() => {
+      if (
+        !storeApi.getState().userSelectionActive ||
+        doesSelectionRectangleExist()
+      ) {
+        return;
+      }
+      const selectedSteps = selectedNodes.map((node) =>
+        flowStructureUtil.getStepOrThrow(node, flowVersion.trigger),
+      );
+      selectedSteps.forEach((step) => {
+        if (
+          step.type === ActionType.LOOP_ON_ITEMS ||
+          step.type === ActionType.ROUTER
+        ) {
+          const childrenNotSelected = flowStructureUtil
+            .getAllChildSteps(step)
+            .filter((c) => isNil(selectedNodes.find((n) => n === c.name)));
+          selectedSteps.push(...childrenNotSelected);
+        }
+      });
+      const step = selectedStep
+        ? flowStructureUtil.getStep(selectedStep, flowVersion.trigger)
+        : null;
+      if (selectedNodes.length === 0 && step) {
+        selectedSteps.push(step);
+      }
+      storeApi
+        .getState()
+        .addSelectedNodes(selectedSteps.map((step) => step.name));
+    }, [selectedNodes, storeApi, selectedStep]);
+    const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+    return (
+      <div
+        ref={containerRef}
+        className="size-full relative overflow-hidden z-50"
+      >
+        <FlowDragLayer
+          cursorPosition={cursorPosition}
+          lefSideBarContainerWidth={lefSideBarContainerWidth}
         >
-          <AboveFlowWidgets></AboveFlowWidgets>
-          <Background />
-
-          <BelowFlowWidget graphHeight={graphHeight.height}></BelowFlowWidget>
-        </ReactFlow>
-      </FlowDragLayer>
-    </div>
-  );
-});
+          <CanvasContextMenu
+            selectedNodes={selectedNodes}
+            applyOperation={applyOperation}
+            selectedStep={selectedStep}
+            exitStepSettings={exitStepSettings}
+            flowVersion={flowVersion}
+            readonly={readonly}
+            setPieceSelectorStep={setPieceSelectorStep}
+            actionsToPaste={actionsToPaste}
+            contextMenuType={contextMenuType}
+          >
+            <ReactFlow
+              onContextMenu={onContextMenu}
+              onPaneClick={() => {
+                storeApi.getState().unselectNodesAndEdges();
+              }}
+              nodeTypes={flowUtilConsts.nodeTypes}
+              nodes={graph.nodes}
+              edgeTypes={flowUtilConsts.edgeTypes}
+              edges={graph.edges}
+              draggable={false}
+              edgesFocusable={false}
+              elevateEdgesOnSelect={false}
+              maxZoom={1.5}
+              minZoom={0.5}
+              panOnDrag={inGrabPanningMode ? [0, 1] : [1]}
+              zoomOnDoubleClick={false}
+              panOnScroll={true}
+              panOnScrollMode={PanOnScrollMode.Free}
+              fitView={false}
+              nodesConnectable={false}
+              elementsSelectable={true}
+              nodesDraggable={false}
+              nodesFocusable={false}
+              onNodeDrag={(event) => {
+                setCursorPosition({ x: event.clientX, y: event.clientY });
+              }}
+              selectionKeyCode={inGrabPanningMode ? 'Shift' : null}
+              multiSelectionKeyCode={inGrabPanningMode ? 'Shift' : null}
+              selectionOnDrag={inGrabPanningMode ? false : true}
+              selectNodesOnDrag={true}
+              selectionMode={SelectionMode.Partial}
+              onSelectionChange={onSelectionChange}
+              onSelectionEnd={onSelectionEnd}
+            >
+              <AboveFlowWidgets></AboveFlowWidgets>
+              <Background />
+            </ReactFlow>
+          </CanvasContextMenu>
+        </FlowDragLayer>
+      </div>
+    );
+  },
+);
 
 FlowCanvas.displayName = 'FlowCanvas';
-export { FlowCanvas };

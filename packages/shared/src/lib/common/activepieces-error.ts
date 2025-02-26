@@ -2,7 +2,8 @@ import { FileId } from '../file'
 import { FlowRunId } from '../flow-run/flow-run'
 import { FlowId } from '../flows/flow'
 import { FlowVersionId } from '../flows/flow-version'
-import { ProjectId, ProjectMemberRole } from '../project'
+import { ProjectId } from '../project'
+import { ProjectRole } from '../project-role/project-role'
 import { UserId } from '../user'
 import { ApId } from './id-generator'
 import { Permission } from './security'
@@ -60,15 +61,27 @@ export type ApErrorParams =
     | DomainIsNotAllowedErrorParams
     | EmailAuthIsDisabledParams
     | ExistingAlertChannelErrorParams
-    | ActivationKeyNotFoundParams
-    | ActivationKeyNotAlreadyActivated
     | EmailAlreadyHasActivationKey
     | ProviderProxyConfigNotFoundParams
     | AITokenLimitExceededParams
+    | SessionExpiredParams
+    | InvalidLicenseKeyParams
+    | NoChatResponseParams
+    | InvalidSmtpCredentialsErrorParams
+    | InvalidGitCredentialsParams
+    | InvalidReleaseTypeParams
+    | CopilotFailedErrorParams
+    | ProjectExternalIdAlreadyExistsParams
+    | MemoryIssueParams
+    | InvalidCustomDomainErrorParams
 export type BaseErrorParams<T, V> = {
     code: T
     params: V
 }
+
+export type MemoryIssueParams = BaseErrorParams<ErrorCode.MEMORY_ISSUE, {
+    message?: string
+}>
 
 export type InvitationOnlySignUpParams = BaseErrorParams<
 ErrorCode.INVITATION_ONLY_SIGN_UP,
@@ -83,6 +96,12 @@ export type InvalidCloudClaimParams = BaseErrorParams<ErrorCode.INVALID_CLOUD_CL
 export type InvalidBearerTokenParams = BaseErrorParams<ErrorCode.INVALID_BEARER_TOKEN, {
     message?: string
 }>
+
+export type SessionExpiredParams = BaseErrorParams<ErrorCode.SESSION_EXPIRED, {
+    message?: string
+}>
+
+export type NoChatResponseParams = BaseErrorParams<ErrorCode.NO_CHAT_RESPONSE, Record<string, never>>
 
 export type FileNotFoundErrorParams = BaseErrorParams<ErrorCode.FILE_NOT_FOUND, { id: FileId }>
 
@@ -106,7 +125,7 @@ ErrorCode.PERMISSION_DENIED,
 {
     userId: UserId
     projectId: ProjectId
-    role: ProjectMemberRole
+    projectRole: ProjectRole | null
     permission: Permission | undefined
 }
 >
@@ -235,7 +254,9 @@ Record<string, never>
 
 export type FlowOperationErrorParams = BaseErrorParams<
 ErrorCode.FLOW_OPERATION_INVALID,
-Record<string, never>
+{
+    message: string
+}
 >
 
 export type FlowFormNotFoundError = BaseErrorParams<
@@ -272,6 +293,13 @@ ErrorCode.ENTITY_NOT_FOUND,
     message?: string
     entityType?: string
     entityId?: string
+}
+>
+
+export type InvalidCustomDomainErrorParams = BaseErrorParams<
+ErrorCode.INVALID_CUSTOM_DOMAIN,
+{
+    message: string
 }
 >
 
@@ -374,17 +402,37 @@ ErrorCode.EXISTING_ALERT_CHANNEL,
 
 export type InvalidOtpParams = BaseErrorParams<ErrorCode.INVALID_OTP, Record<string, never>>
 
-export type ActivationKeyNotFoundParams = BaseErrorParams<ErrorCode.ACTIVATION_KEY_NOT_FOUND, {
+export type InvalidLicenseKeyParams = BaseErrorParams<ErrorCode.INVALID_LICENSE_KEY, {
     key: string
-}>
-export type ActivationKeyNotAlreadyActivated = BaseErrorParams<ErrorCode.ACTIVATION_KEY_ALREADY_ACTIVATED, {
-    key: string
-}>
+}>  
+
 export type EmailAlreadyHasActivationKey = BaseErrorParams<ErrorCode.EMAIL_ALREADY_HAS_ACTIVATION_KEY, {
     email: string
 }>
 
+export type InvalidSmtpCredentialsErrorParams = BaseErrorParams<ErrorCode.INVALID_SMTP_CREDENTIALS, {
+    message: string
+}>  
+
+export type InvalidGitCredentialsParams = BaseErrorParams<ErrorCode.INVALID_GIT_CREDENTIALS, {
+    message: string
+}>
+
+export type InvalidReleaseTypeParams = BaseErrorParams<ErrorCode.INVALID_RELEASE_TYPE, {
+    message: string
+}>
+
+export type CopilotFailedErrorParams = BaseErrorParams<ErrorCode.COPILOT_FAILED, {
+    message: string
+}>
+
+export type ProjectExternalIdAlreadyExistsParams = BaseErrorParams<ErrorCode.PROJECT_EXTERNAL_ID_ALREADY_EXISTS, {
+    externalId: string
+}>
+
 export enum ErrorCode {
+    INVALID_CUSTOM_DOMAIN = 'INVALID_CUSTOM_DOMAIN',
+    NO_CHAT_RESPONSE = 'NO_CHAT_RESPONSE',
     AUTHENTICATION = 'AUTHENTICATION',
     AUTHORIZATION = 'AUTHORIZATION',
     PROVIDER_PROXY_CONFIG_NOT_FOUND_FOR_PROVIDER = 'PROVIDER_PROXY_CONFIG_NOT_FOUND_FOR_PROVIDER',
@@ -394,9 +442,11 @@ export enum ErrorCode {
     ENGINE_OPERATION_FAILURE = 'ENGINE_OPERATION_FAILURE',
     ENTITY_NOT_FOUND = 'ENTITY_NOT_FOUND',
     EXECUTION_TIMEOUT = 'EXECUTION_TIMEOUT',
+    MEMORY_ISSUE = 'MEMORY_ISSUE',
     EMAIL_AUTH_DISABLED = 'EMAIL_AUTH_DISABLED',
     EXISTING_USER = 'EXISTING_USER',
     EXISTING_ALERT_CHANNEL = 'EXISTING_ALERT_CHANNEL',
+    PROJECT_EXTERNAL_ID_ALREADY_EXISTS = 'PROJECT_EXTERNAL_ID_ALREADY_EXISTS',
     FLOW_FORM_NOT_FOUND = 'FLOW_FORM_NOT_FOUND',
     FILE_NOT_FOUND = 'FILE_NOT_FOUND',
     FLOW_INSTANCE_NOT_FOUND = 'INSTANCE_NOT_FOUND',
@@ -407,6 +457,7 @@ export enum ErrorCode {
     INVALID_API_KEY = 'INVALID_API_KEY',
     INVALID_APP_CONNECTION = 'INVALID_APP_CONNECTION',
     INVALID_BEARER_TOKEN = 'INVALID_BEARER_TOKEN',
+    SESSION_EXPIRED = 'SESSION_EXPIRED',
     INVALID_CLAIM = 'INVALID_CLAIM',
     INVALID_CLOUD_CLAIM = 'INVALID_CLOUD_CLAIM',
     INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
@@ -433,7 +484,10 @@ export enum ErrorCode {
     TRIGGER_FAILED = 'TRIGGER_FAILED',
     USER_IS_INACTIVE = 'USER_IS_INACTIVE',
     VALIDATION = 'VALIDATION',
-    ACTIVATION_KEY_NOT_FOUND = 'ACTIVATION_KEY_NOT_FOUND',
-    ACTIVATION_KEY_ALREADY_ACTIVATED = 'ACTIVATION_KEY_ALREADY_ACTIVATED',
+    INVALID_LICENSE_KEY = 'INVALID_LICENSE_KEY',
     EMAIL_ALREADY_HAS_ACTIVATION_KEY = 'EMAIL_ALREADY_HAS_ACTIVATION_KEY',
+    INVALID_SMTP_CREDENTIALS = 'INVALID_SMTP_CREDENTIALS',
+    INVALID_GIT_CREDENTIALS = 'INVALID_GIT_CREDENTIALS',
+    INVALID_RELEASE_TYPE = 'INVALID_RELEASE_TYPE',
+    COPILOT_FAILED = 'COPILOT_FAILED',
 }

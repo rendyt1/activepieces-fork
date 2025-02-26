@@ -1,32 +1,29 @@
 import { PieceAuth, createPiece } from '@activepieces/pieces-framework';
-import { createCustomApiCallAction } from '@activepieces/pieces-common';
+import {
+  AI_PROVIDERS_MAKRDOWN,
+  createCustomApiCallAction,
+} from '@activepieces/pieces-common';
 import { askClaude } from './lib/actions/send-prompt';
 import { baseUrl } from './lib/common/common';
 import { PieceCategory } from '@activepieces/shared';
-
-const markdownDescription = `
-Follow these instructions to get your Claude API Key:
-
-1. Visit the following website: https://console.anthropic.com/settings/keys.
-2. Once on the website, locate and click on the option to obtain your Claude API Key.
-
-`;
+import { extractStructuredDataAction } from './lib/actions/extract-structured-data';
 
 export const claudeAuth = PieceAuth.SecretText({
   displayName: 'API Key',
   required: true,
-  description: markdownDescription,
+  description: AI_PROVIDERS_MAKRDOWN.anthropic,
 });
 
 export const claude = createPiece({
   displayName: 'Anthropic Claude',
   auth: claudeAuth,
-  minimumSupportedRelease: '0.20.0',
+  minimumSupportedRelease: '0.30.0',
   logoUrl: 'https://cdn.activepieces.com/pieces/claude.png',
   categories: [PieceCategory.ARTIFICIAL_INTELLIGENCE],
-  authors: ['dennisrongo'],
+  authors: ['dennisrongo','kishanprmr'],
   actions: [
     askClaude,
+    extractStructuredDataAction,
     createCustomApiCallAction({
       auth: claudeAuth,
       baseUrl: () => baseUrl,

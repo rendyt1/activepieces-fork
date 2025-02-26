@@ -1,15 +1,16 @@
 import { PrincipalType } from '@activepieces/shared'
 import { FastifyInstance } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
+import { initializeDatabase } from '../../../../src/app/database'
 import { databaseConnection } from '../../../../src/app/database/database-connection'
 import { setupServer } from '../../../../src/app/server'
 import { generateMockToken } from '../../../helpers/auth'
-import { createMockPlatform, createMockProject, createMockUser } from '../../../helpers/mocks'
+import { mockAndSaveBasicSetup } from '../../../helpers/mocks'
 
 let app: FastifyInstance | null = null
 
 beforeAll(async () => {
-    await databaseConnection().initialize()
+    await initializeDatabase({ runMigrations: false })
     app = await setupServer()
 })
 
@@ -22,16 +23,7 @@ describe('Project Worker API', () => {
     describe('Get worker project endpoint', () => {
         it('Returns worker project', async () => {
             // arrange
-            const mockUser = createMockUser()
-            await databaseConnection().getRepository('user').save([mockUser])
-
-            const mockPlatform = createMockPlatform({
-                ownerId: mockUser.id,
-            })
-            await databaseConnection().getRepository('platform').save([mockPlatform])
-
-            const mockProject = createMockProject({ ownerId: mockUser.id, platformId: mockPlatform.id })
-            await databaseConnection().getRepository('project').save([mockProject])
+            const { mockProject } = await mockAndSaveBasicSetup()
 
             const mockToken = await generateMockToken({
                 type: PrincipalType.ENGINE,

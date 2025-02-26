@@ -1,5 +1,5 @@
-import { AppSystemProp, system } from '@activepieces/server-shared'
-import { isNil } from '@activepieces/shared'
+import { exceptionHandler } from '@activepieces/server-shared'
+import { isEmpty, isNil } from '@activepieces/shared'
 import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
 import { systemJobsSchedule } from '../../helper/system-jobs'
 import { SystemJobName } from '../../helper/system-jobs/common'
@@ -9,8 +9,29 @@ import { licenseKeysController } from './license-keys-controller'
 import { licenseKeysService } from './license-keys-service'
 
 export const licenseKeysModule: FastifyPluginAsyncTypebox = async (app) => {
-    systemJobHandlers.registerJobHandler(SystemJobName.TRIAL_TRACKER, licenseKeyJobHandler)
-    await systemJobsSchedule.upsertJob({
+    systemJobHandlers.registerJobHandler(SystemJobName.TRIAL_TRACKER, async () => {
+        const platforms = await platformService.getAll()
+        for (const platform of platforms) {
+            if (isNil(platform.licenseKey) || isEmpty(platform.licenseKey)) {
+                continue
+            }
+            try {
+                const key = await licenseKeysService(app.log).verifyKeyOrReturnNull({
+                    platformId: platform.id,
+                    license: platform.licenseKey,
+                })
+                if (isNil(key)) {
+                    await licenseKeysService(app.log).downgradeToFreePlan(platform.id)
+                    continue
+                }
+                await licenseKeysService(app.log).applyLimits(platform.id, key)
+            }
+            catch (e) {
+                exceptionHandler.handle(e, app.log)
+            }
+        }
+    })
+    await systemJobsSchedule(app.log).upsertJob({
         job: {
             name: SystemJobName.TRIAL_TRACKER,
             data: {},
@@ -21,15 +42,4 @@ export const licenseKeysModule: FastifyPluginAsyncTypebox = async (app) => {
         },
     })
     await app.register(licenseKeysController, { prefix: '/v1/license-keys' })
-}
-
-async function licenseKeyJobHandler(): Promise<void> {
-    const platform = await platformService.getOldestPlatform()
-    if (isNil(platform)) {
-        return
-    }
-    await licenseKeysService.verifyKeyAndApplyLimits({
-        platformId: platform.id,
-        license: system.get<string>(AppSystemProp.LICENSE_KEY),
-    })
 }

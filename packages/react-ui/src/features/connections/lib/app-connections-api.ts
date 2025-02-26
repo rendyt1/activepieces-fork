@@ -1,9 +1,11 @@
 import { api } from '@/lib/api';
 import {
-  AppConnection,
+  AppConnectionOwners,
   AppConnectionWithoutSensitiveData,
+  ListAppConnectionOwnersRequestQuery,
   ListAppConnectionsRequestQuery,
   SeekPage,
+  UpdateConnectionValueRequestBody,
   UpsertAppConnectionRequestBody,
 } from '@activepieces/shared';
 
@@ -16,10 +18,32 @@ export const appConnectionsApi = {
       request,
     );
   },
-  upsert(request: UpsertAppConnectionRequestBody): Promise<AppConnection> {
-    return api.post<AppConnection>('/v1/app-connections', request);
+  upsert(
+    request: UpsertAppConnectionRequestBody,
+  ): Promise<AppConnectionWithoutSensitiveData> {
+    return api.post<AppConnectionWithoutSensitiveData>(
+      '/v1/app-connections',
+      request,
+    );
   },
   delete(id: string): Promise<void> {
     return api.delete<void>(`/v1/app-connections/${id}`);
+  },
+  update(
+    id: string,
+    request: UpdateConnectionValueRequestBody,
+  ): Promise<AppConnectionWithoutSensitiveData> {
+    return api.post<AppConnectionWithoutSensitiveData>(
+      `/v1/app-connections/${id}`,
+      request,
+    );
+  },
+  getOwners(
+    request: ListAppConnectionOwnersRequestQuery,
+  ): Promise<SeekPage<AppConnectionOwners>> {
+    return api.get<SeekPage<AppConnectionOwners>>(
+      '/v1/app-connections/owners',
+      request,
+    );
   },
 };

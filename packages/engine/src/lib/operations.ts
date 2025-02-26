@@ -1,5 +1,4 @@
 import {
-    Action,
     ActionType,
     EngineOperation,
     EngineOperationType,
@@ -13,10 +12,10 @@ import {
     ExecuteTriggerOperation,
     ExecuteValidateAuthOperation,
     ExecutionType,
-    flowHelper,
     FlowRunResponse,
+    flowStructureUtil,
     GenericStepOutput,
-    isNil,
+    StepOutput,
     StepOutputStatus,
     TriggerHookType,
 } from '@activepieces/shared'
@@ -31,15 +30,16 @@ import { utils } from './utils'
 
 const executeFlow = async (input: ExecuteFlowOperation, context: FlowExecutorContext): Promise<EngineResponse<Pick<FlowRunResponse, 'status' | 'error'>>> => {
     const constants = EngineConstants.fromExecuteFlowInput(input)
-    const output = await flowExecutor.execute({
-        action: input.flowVersion.trigger.nextAction,
+    const output = await flowExecutor.executeFromTrigger({
         executionState: context,
         constants,
+        input,
     })
     const newContext = output.verdict === ExecutionVerdict.RUNNING ? output.setVerdict(ExecutionVerdict.SUCCEEDED, output.verdictResponse) : output
     await progressService.sendUpdate({
         engineConstants: constants,
         flowExecutorContext: newContext,
+        updateImmediate: true,
     })
     const response = await newContext.toResponse()
     return {
@@ -53,10 +53,7 @@ const executeFlow = async (input: ExecuteFlowOperation, context: FlowExecutorCon
 
 
 async function executeStep(input: ExecuteStepOperation): Promise<ExecuteActionResponse> {
-    const step = flowHelper.getStep(input.flowVersion, input.stepName) as Action | undefined
-    if (isNil(step) || !Object.values(ActionType).includes(step.type)) {
-        throw new Error('Step not found or not supported')
-    }
+    const step = flowStructureUtil.getActionOrThrow(input.stepName, input.flowVersion.trigger)
     const output = await flowExecutor.getExecutorForAction(step.type).handle({
         action: step,
         executionState: await testExecutionContext.stateFromFlowVersion({
@@ -65,13 +62,27 @@ async function executeStep(input: ExecuteStepOperation): Promise<ExecuteActionRe
             excludedStepName: step.name,
             projectId: input.projectId,
             engineToken: input.engineToken,
+            sampleData: input.sampleData,
         }),
         constants: EngineConstants.fromExecuteStepInput(input),
     })
     return {
         success: output.verdict !== ExecutionVerdict.FAILED,
-        output: output.steps[step.name].output ?? output.steps[step.name].errorMessage,
+        output: cleanSampleData(output.steps[step.name]),
     }
+}
+
+function cleanSampleData(stepOutput: StepOutput) {
+    if (stepOutput.status === StepOutputStatus.FAILED) {
+        return stepOutput.errorMessage
+    }
+    if (stepOutput.type === ActionType.LOOP_ON_ITEMS) {
+        return {
+            item: stepOutput.output?.item,
+            index: stepOutput.output?.index,
+        }
+    }
+    return stepOutput.output
 }
 
 function getFlowExecutionState(input: ExecuteFlowOperation): FlowExecutorContext {
@@ -125,6 +136,7 @@ export async function execute(operationType: EngineOperationType, operation: Eng
                         flowVersion: input.flowVersion,
                         projectId: input.projectId,
                         engineToken: input.engineToken,
+                        sampleData: input.sampleData,
                     }),
                     searchValue: input.searchValue,
                     constants: EngineConstants.fromExecutePropertyInput(input),

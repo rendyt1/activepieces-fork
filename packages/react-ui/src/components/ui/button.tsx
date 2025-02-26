@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { Shortcut } from './shortcut';
 import { LoadingSpinner } from './spinner';
 
 const buttonVariants = cva(
@@ -24,13 +25,15 @@ const buttonVariants = cva(
           'enabled:hover:bg-accent enabled:hover:text-accent-foreground focus-visible:ring-0',
         link: 'text-primary underline-offset-4 enabled:hover:underline',
         transparent: 'text-primary enabled:hover:bg-transparent',
+        'outline-primary':
+          'text-primary font-medium enabled:hover:bg-primary/10 enabled:hover:border-primary enabled:hover:font-semibold',
       },
       size: {
         default: 'h-10 px-4 py-2',
         sm: 'h-9 rounded-sm px-3',
         lg: 'h-11 rounded-sm px-8',
         xs: 'h-6 p-2',
-        icon: 'size-10',
+        icon: 'size-8',
       },
     },
     defaultVariants: {
@@ -115,11 +118,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             {keyboardShortcut && (
               <div className="flex justify-center items-center gap-2">
                 {children}
-                <span className="flex-grow text-xs tracking-widest text-muted-foreground">
-                  {!isEscape && (isMac ? '⌘' : 'Ctrl')}
-                  {!isEscape && ' + '}
-                  {keyboardShortcut.toString().toLocaleUpperCase()}
-                </span>
+                <Shortcut shortcutKey={keyboardShortcut} withCtrl={true} />
               </div>
             )}
             {!keyboardShortcut && children}
