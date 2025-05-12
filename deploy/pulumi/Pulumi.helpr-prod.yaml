@@ -1,0 +1,21 @@
+encryptionsalt: v1:B0byUF5O+hA=:v1:ZsMYvBdJpje0YREj:L4UbJ/hQ5ejdrbHvs5SZf7hb79LC7Q==
+config:
+  activepieces:apEncryptionKey: ''
+  activepieces:apJwtSecret: ''
+  activepieces:containerCpu: '512'
+  activepieces:containerInstances: '1'
+  activepieces:containerMemory: '1024'
+  activepieces:dbInstanceClass: 'db.t3.small'
+  activepieces:dbIsPublic: 'false'
+  activepieces:dbPassword:
+    secure: v1:o0rqsHKP1aojjmfA:J6JEdBde7hOadnv3uqXPEqsuAd9Jcu+JXfmpGoJ0
+  activepieces:dbUsername: 'postgres'
+  activepieces:deployLocalBuild: 'false'
+  activepieces:environment: 'prod'
+  activepieces:redisNodeType: 'cache.t3.small'
+  activepieces:repoName: 'helpr-prod'
+  activepieces:usePostgres: 'false'
+  activepieces:useRedis: 'false'
+  aws:region: 'ap-southeast-3'
+  activepieces:domain: 'helpr.id'
+  activepieces:subDomain: 'secure'
